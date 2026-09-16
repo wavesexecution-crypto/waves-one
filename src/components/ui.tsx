@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useId, type ReactNode } from "react";
-import { X, ArrowUpRight, Waves } from "lucide-react";
+import { CircleCheck, X, ArrowUpRight, Waves } from "lucide-react";
+import { useStore } from "./store";
 
 export function Brand({ compact = false }: { compact?: boolean }) {
   return <div className="brand"><Waves size={25} strokeWidth={2.2} /><span>WAVES <b>ONE</b></span>{!compact && <span className="brand-mark">HQ</span>}</div>;
@@ -48,7 +49,14 @@ export function Modal({ title, eyebrow, children, onClose, wide = false }: { tit
       previous?.focus();
     };
   }, []);
-  return <dialog ref={ref} className={`modal ${wide ? "wide" : ""}`} aria-labelledby={titleId} onClick={event => { if (event.target === event.currentTarget) { const r = event.currentTarget.getBoundingClientRect(); if (event.clientX < r.left || event.clientX > r.right || event.clientY < r.top || event.clientY > r.bottom) onClose(); } }}><div className="modal-head"><div>{eyebrow && <p className="eyebrow">{eyebrow}</p>}<h2 id={titleId}>{title}</h2></div><button className="icon-button" aria-label="Close dialog" onClick={onClose}><X size={20} /></button></div><div className="modal-body">{children}</div></dialog>;
+  return <dialog ref={ref} className={`modal ${wide ? "wide" : ""}`} aria-labelledby={titleId} onClick={event => { if (event.target === event.currentTarget) { const r = event.currentTarget.getBoundingClientRect(); if (event.clientX < r.left || event.clientX > r.right || event.clientY < r.top || event.clientY > r.bottom) onClose(); } }}><div className="modal-head"><div>{eyebrow && <p className="eyebrow">{eyebrow}</p>}<h2 id={titleId}>{title}</h2></div><button className="icon-button" aria-label="Close dialog" onClick={onClose}><X size={20} /></button></div><div className="modal-body">{children}</div>
+    {typeof window === "object" && <ToastSlot />}
+  </dialog>;
+}
+function ToastSlot() {
+  const { toast } = useStore();
+  if (!toast) return null;
+  return <div className="toast in-dialog" role="status"><CircleCheck size={17} />{toast}</div>;
 }
 export function Field({ label, children }: { label: string; children: ReactNode }) {
   return <div className="detail-field"><h3>{label}</h3><div>{children}</div></div>;
