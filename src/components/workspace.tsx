@@ -1,8 +1,12 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { AlertTriangle, ArrowUpRight, Bot, Download, FileText, Layers, Pause, Play, Plus, Search, ShieldCheck, Terminal, Users, Waves } from "lucide-react";
 import { useStore } from "./store";
+import { DevicePanel } from "./agent-live";
+import { decideApproval, getDevices, getPolicy, listApprovals, putPolicy } from "../lib/agent-client";
+import type { AgentApproval, DeviceStatus } from "../lib/agent-client";
+import { CAPABILITIES, CAPABILITY_RISK, type Policy, type PolicyValue } from "../lib/agent-protocol";
 import { Avatar, Badge, Empty, Modal, Progress, SectionTitle, StatusBadge, TextLink, dateLabel } from "./ui";
 import type { Screen, ViewProps, Selection } from "./overview";
 import type { Activity, Permission } from "../lib/model";
@@ -99,6 +103,83 @@ function People({ open }: ViewProps) {
   </>;
 }
 
+function ComputerAgentApprovals() {
+  const [approvals, setApprovals] = useState<AgentApproval[]>([]);
+  const [notes, setNotes] = useState<Record<string, string>>({});
+  const [error, setError] = useState<string | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [reachable, setReachable] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      try {
+        const next = await listApprovals();
+        if (!cancelled) {
+          setApprovals(next);
+          setReachable(true);
+        }
+      } catch {
+        if (!cancelled) setReachable(false);
+      }
+    }
+    load();
+    return () => { cancelled = true; };
+  }, []);
+
+  const pending = approvals.filter(approval => approval.status === "pending");
+
+  useEffect(() => {
+    if (!pending.length) return;
+    const timer = window.setInterval(async () => {
+      try {
+        setApprovals(await listApprovals());
+        setReachable(true);
+      } catch {
+        setReachable(false);
+      }
+    }, 5000);
+    return () => window.clearInterval(timer);
+  }, [pending.length]);
+
+  async function decide(approval: AgentApproval, decision: "approved" | "rejected") {
+    const note = (notes[approval.id] || "").trim();
+    if (decision === "rejected" && !note) return;
+    setBusyId(approval.id);
+    setError(null);
+    try {
+      await decideApproval(approval.id, decision, decision === "rejected" ? note : undefined);
+      setApprovals(await listApprovals());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Decision failed");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  return <section>
+    <SectionTitle title="COMPUTER AGENT" count={pending.length} />
+    {!reachable ? <div className="notice"><ShieldCheck size={18} /><span>Control plane unreachable. Computer-agent requests will appear here when the server is reachable.</span></div>
+    : <div className="list-panel">{approvals.map(approval => <article className="list-row" key={approval.id}>
+      <ShieldCheck size={20} />
+      <div className="row-main">
+        <span className="eyebrow">{approval.kind}</span>
+        <strong>{approval.title}</strong>
+        <span className="muted">{approval.reason}</span>
+        <small className="muted">Requested by {approval.createdBy} · {dateLabel(approval.createdAt)}</small>
+        {approval.status === "pending"
+          ? <label className="detail-field"><span className="muted">Decision note (required to reject)</span><input aria-label={`Decision note for ${approval.title}`} placeholder="Why is this being rejected?" value={notes[approval.id] || ""} onChange={event => setNotes(current => ({ ...current, [approval.id]: event.target.value }))} /></label>
+          : approval.note ? <small className="muted">Note: {approval.note}</small> : null}
+      </div>
+      {approval.status === "pending" ? <div className="toolbar">
+        <button className="button small primary" disabled={busyId === approval.id} onClick={() => decide(approval, "approved")}>Approve</button>
+        <button className="button small danger" disabled={busyId === approval.id || !(notes[approval.id] || "").trim()} onClick={() => decide(approval, "rejected")}>Reject</button>
+      </div> : <StatusBadge status={approval.status} />}
+    </article>)}{!approvals.length && <Empty title="No computer-agent requests">Workstation requests that need a human decision will appear here.</Empty>}</div>}
+    {error && <p className="error-text">{error}</p>}
+  </section>;
+}
+
 function Approvals({ open }: ViewProps) {
   const { state } = useStore();
   const [view, setView] = useState("Pending");
@@ -108,6 +189,7 @@ function Approvals({ open }: ViewProps) {
     <Filters label="Approval view" options={["Pending", "History"]} value={view} onChange={setView} />
     <SectionTitle title={view === "Pending" ? "NEEDS YOUR DECISION" : "DECISION HISTORY"} count={approvals.length} />
     <div className="list-panel">{approvals.map(approval => <button className="list-row" key={approval.id} onClick={() => open({ type: "approval", id: approval.id })}><ShieldCheck size={20} /><div className="row-main"><span className="eyebrow">{approval.project} / {approval.kind}</span><strong>{approval.title}</strong><span className="muted">{approval.what}</span><small className="muted">Requested by {approval.requestedBy} · {dateLabel(approval.createdAt)}</small></div><StatusBadge status={approval.status} /><ArrowUpRight size={16} /></button>)}{!approvals.length && <Empty title={view === "Pending" ? "Nothing waiting on you" : "No decisions yet"}>{view === "Pending" ? "New requests will appear here when your judgment is needed." : "Approved, rejected, and returned requests will appear here."}</Empty>}</div>
+    <ComputerAgentApprovals />
   </>;
 }
 
@@ -177,6 +259,21 @@ function Files({ open }: ViewProps) {
 
 function AI({ command, navigate }: ViewProps) {
   const { state, dispatch, notify } = useStore();
+  const [liveOnline, setLiveOnline] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    async function check() {
+      try {
+        const devices: DeviceStatus[] = await getDevices();
+        if (!cancelled) setLiveOnline(devices.some(device => device.online));
+      } catch {
+        if (!cancelled) setLiveOnline(false);
+      }
+    }
+    check();
+    const timer = window.setInterval(check, 5000);
+    return () => { cancelled = true; window.clearInterval(timer); };
+  }, []);
   const readPermission = state.permissions.find(permission => permission.id === "read");
   const canRun = !state.agentPaused && readPermission?.value === "allowed";
   const reason = state.agentPaused ? "Resume the agent before running an inspection." : readPermission?.value === "approval" ? "Read access requires approval. Change the low-risk read permission to Allowed in Settings to run this demo." : readPermission?.value !== "allowed" ? "Read access is not allowed. Review permissions in Settings." : "Read-only inspection is authorized. No external action will be taken.";
@@ -185,10 +282,85 @@ function AI({ command, navigate }: ViewProps) {
   return <>
     <Intro eyebrow="SUPERVISED BY DESIGN" title="Waves AI" copy="Give direction. Inspect the plan. Keep control of what happens next."><button className="button primary" onClick={command}><Waves size={16} />Open command</button></Intro>
     <div className="notice"><Bot size={20} /><span><strong>Deterministic simulation, not an LLM.</strong> Commands use predefined local logic. No model, real terminal, browser automation, or external account is connected.</span></div>
-    <div className="split-grid"><section className="panel"><SectionTitle title="COMPUTER AGENT"><Badge>{state.agentPaused ? "Paused" : "Supervised"}</Badge></SectionTitle><div className="stack"><Terminal size={27} /><h3>A visible, bounded operator.</h3><p className="muted">Simulate a read-only inspection of demo work. Pausing stops new inspections; it does not change existing tasks.</p><div className="toolbar"><button className="button" onClick={() => dispatch({ type: "AGENT_TOGGLE" })}>{state.agentPaused ? <Play size={15} /> : <Pause size={15} />}{state.agentPaused ? "Resume agent" : "Pause agent"}</button><button className="button primary" disabled={!canRun} aria-describedby="inspection-gate" onClick={() => { if (!canRun) return; dispatch({ type: "AGENT_RUN" }); notify("Simulated inspection completed. Review the agent audit below."); }}><Play size={15} />Run inspection</button></div><p id="inspection-gate" className={canRun ? "muted" : "warning-text"}>{reason}</p><span className="mono">{state.agentRuns} simulated inspections</span><TextLink onClick={() => navigate("Settings")}>Review permissions</TextLink></div></section>
+    <DevicePanel />
+    {liveOnline
+      ? <div className="notice"><Bot size={20} /><span>Live device connected — jobs below execute on the authorized workstation sandbox.</span></div>
+      : <div className="notice"><Bot size={20} /><span>Demo mode — no workstation paired. Pair a device for live execution.</span></div>}
+    <div className="split-grid"><section className="panel"><SectionTitle title="COMPUTER AGENT"><Badge>{state.agentPaused ? "Paused" : "Supervised"}</Badge></SectionTitle><div className="stack"><Terminal size={27} /><h3>A visible, bounded operator.</h3><p className="muted">Simulate a read-only inspection of demo work. Pausing stops new inspections; it does not change existing tasks.</p>{!liveOnline && <div className="toolbar"><button className="button" onClick={() => dispatch({ type: "AGENT_TOGGLE" })}>{state.agentPaused ? <Play size={15} /> : <Pause size={15} />}{state.agentPaused ? "Resume agent" : "Pause agent"}</button><button className="button primary" disabled={!canRun} aria-describedby="inspection-gate" onClick={() => { if (!canRun) return; dispatch({ type: "AGENT_RUN" }); notify("Simulated inspection completed. Review the agent audit below."); }}><Play size={15} />Run inspection</button></div>}<p id="inspection-gate" className={canRun ? "muted" : "warning-text"}>{reason}</p><span className="mono">{state.agentRuns} simulated inspections</span><TextLink onClick={() => navigate("Settings")}>Review permissions</TextLink></div></section>
     <section className="panel"><SectionTitle title="WORKSPACE SCOPE" /><p className="muted">Illustrative workspaces derived from your goals. Authorization applies only to local demo data, never to actual directories.</p><div className="stack">{projects.map(project => <div className="permission-row" key={project}><div className="row-main"><strong>{project}</strong><span className="muted">Demo workspace · read-only inspection</span></div><StatusBadge status={readPermission?.value || "denied"} /></div>)}</div></section></div>
     <section><SectionTitle title="AGENT AUDIT" count={events.length}><span className="muted">Chronological · oldest first</span></SectionTitle><div className="agent-console" aria-label="Simulated agent audit, not a terminal">{events.map(event => <div className="console-line" key={event.id}><time dateTime={event.timestamp} className="mono muted">{dateLabel(event.timestamp)}</time><div className="row-main"><strong>{event.actor} · {event.action}</strong><span>{event.result}</span><small className="muted">Target: {event.target} · Approval: {event.approvalState}</small></div></div>)}{!events.length && <Empty title="No agent actions recorded">Run an authorized inspection to start the audit trail.</Empty>}</div></section>
   </>;
+}
+
+function ComputerAgentPolicy() {
+  const [policy, setPolicy] = useState<Policy | null>(null);
+  const [draft, setDraft] = useState<Policy["capabilities"] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [reachable, setReachable] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      try {
+        const next = await getPolicy();
+        if (!cancelled) {
+          setPolicy(next);
+          setDraft({ ...next.capabilities });
+          setReachable(true);
+        }
+      } catch {
+        if (!cancelled) setReachable(false);
+      }
+    }
+    load();
+    return () => { cancelled = true; };
+  }, []);
+
+  async function save() {
+    if (!policy || !draft) return;
+    setSaving(true);
+    setError(null);
+    setSaved(false);
+    try {
+      const next = await putPolicy({ version: policy.version, capabilities: draft });
+      setPolicy(next);
+      setDraft({ ...next.capabilities });
+      setSaved(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Save failed");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return <section className="settings-section panel">
+    <SectionTitle title="COMPUTER-AGENT POLICY" />
+    {!reachable && !policy ? <div className="notice"><ShieldCheck size={18} /><span>Control plane unreachable. Computer-agent policy cannot be loaded right now.</span></div>
+    : !policy || !draft ? <p className="muted">Loading computer-agent policy…</p>
+    : <div className="stack">
+      <p className="muted">Live workstation enforcement. High-risk capabilities can never be silently allowed.</p>
+      {(["low", "medium", "high"] as const).map(risk => <div key={risk} className="stack">
+        <SectionTitle title={`${risk.toUpperCase()} RISK`}><Badge tone={risk === "high" ? "warning" : "neutral"}>{risk} risk</Badge></SectionTitle>
+        {CAPABILITIES.filter(capability => CAPABILITY_RISK[capability] === risk).map(capability => <div className="permission-row" key={capability}>
+          <div className="row-main"><strong>{capability}</strong></div>
+          <select aria-label={`${capability} policy`} value={draft[capability]} onChange={event => {
+            const value = event.target.value as PolicyValue;
+            setDraft(current => current ? { ...current, [capability]: value } : current);
+            setSaved(false);
+          }}>
+            {risk !== "high" && <option value="allowed">Allowed</option>}
+            <option value="approval">Requires approval</option>
+            <option value="denied">Denied</option>
+          </select>
+        </div>)}
+      </div>)}
+      {error && <p className="error-text">{error}</p>}
+      {saved && <p className="muted">Policy saved.</p>}
+      <div className="toolbar"><button className="button primary" disabled={saving || !draft} onClick={save}>{saving ? "Saving…" : "Save policy"}</button></div>
+    </div>}
+  </section>;
 }
 
 function Settings() {
@@ -198,6 +370,7 @@ function Settings() {
   return <>
     <Intro eyebrow="CLEAR BOUNDARIES. DELIBERATE CONTROL." title="Settings" copy="Decide what workers can do, and where a human must step in." />
     <section className="settings-section panel"><SectionTitle title="ACTION PERMISSIONS" /><p className="muted">Saved in this browser with the demo. High-risk actions always require approval or remain denied.</p>{state.permissions.map(permission => <div className="permission-row" key={permission.id}><div className="row-main"><strong>{permission.label} <Badge tone={permission.risk === "high" ? "warning" : "neutral"}>{permission.risk} risk</Badge></strong><span className="muted">{permission.description}</span></div><select aria-label={`${permission.label} permission`} value={permission.value} onChange={event => { dispatch({ type: "PERMISSION", id: permission.id, value: event.target.value as Permission["value"] }); notify(`${permission.label} permission updated.`); }}>{permission.risk === "low" && <option value="allowed">Allowed</option>}<option value="approval">Requires approval</option><option value="denied">Denied</option></select></div>)}</section>
+    <ComputerAgentPolicy />
     <section className="settings-section panel"><SectionTitle title="NOTIFICATION PREVIEW" /><div className="permission-row"><div className="row-main"><strong>Sample in-app notification</strong><span className="muted">Cosmetic preview only. This switch does not change alerts or delivery and resets when you leave this screen.</span></div><button className={`toggle ${notificationPreview ? "active" : ""}`} role="switch" aria-checked={notificationPreview} aria-label="Show sample notification" onClick={() => setNotificationPreview(!notificationPreview)}>{notificationPreview ? "On" : "Off"}</button></div>{notificationPreview && <div className="notice"><ShieldCheck size={18} /><span>Preview: a decision is ready for your review.</span></div>}</section>
     <section className="settings-section panel"><SectionTitle title="DEMO DATA" /><p className="muted">This prototype has no backend or authentication. Organization changes are stored locally in this browser.</p><button className="button danger" onClick={() => setResetOpen(true)}>Reset demo data</button></section>
     {resetOpen && <Modal title="Reset this workspace?" eyebrow="LOCAL DEMO DATA" onClose={() => setResetOpen(false)}><div className="stack"><p>This replaces your goals, work, decisions, permissions, and activity with the original demo. Your current local changes cannot be recovered.</p><p className="muted">No external accounts or files are affected.</p><div className="toolbar"><button className="button" onClick={() => setResetOpen(false)}>Keep my changes</button><button className="button danger" onClick={() => { dispatch({ type: "RESET" }); setResetOpen(false); notify("Demo data reset to the original workspace."); }}>Reset demo data</button></div></div></Modal>}

@@ -3,12 +3,14 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev -H localhost",
     "build": "next build",
-    "start": "next start",
+    "start": "next start -H localhost",
     "lint": "eslint",
     "test": "vitest run src/lib",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "agent": "node agent/src/index.mjs",
+    "agent:pair": "node agent/pair.mjs"
   },
   "dependencies": {
     "lucide-react": "^1.46.0",

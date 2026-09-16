@@ -21,6 +21,10 @@
 /.next/
 /out/
 
+# waves-one computer agent (local-only runtime state: device credentials,
+# job queue, approvals, audit log). Never commit.
+.waves/
+
 # production
 /build
 

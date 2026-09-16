@@ -1,0 +1,9 @@
+{
+  "name": "waves-sandbox",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Computer Agent sandbox project. The agent may inspect, test, and modify files here after approval.",
+  "scripts": {
+    "test": "node --test \"test/*.test.mjs\""
+  }
+}
