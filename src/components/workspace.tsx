@@ -4,8 +4,9 @@ import { useEffect, useState, type ReactNode } from "react";
 import { AlertTriangle, ArrowUpRight, Bot, Download, FileText, Layers, Pause, Play, Plus, Search, ShieldCheck, Terminal, Users, Waves } from "lucide-react";
 import { useStore } from "./store";
 import { DevicePanel } from "./agent-live";
-import { decideApproval, getDevices, getPolicy, listApprovals, putPolicy } from "../lib/agent-client";
+import { artifactDownloadUrl, clearOwnerToken, decideApproval, getDevices, getOwnerTokenMode, getPolicy, hideSecretParams, listApprovals, listArtifacts, putPolicy, setOwnerToken } from "../lib/agent-client";
 import type { AgentApproval, DeviceStatus } from "../lib/agent-client";
+import type { ArtifactMeta } from "../lib/agent-protocol";
 import { CAPABILITIES, CAPABILITY_RISK, type Policy, type PolicyValue } from "../lib/agent-protocol";
 import { Avatar, Badge, Empty, Modal, Progress, SectionTitle, StatusBadge, TextLink, dateLabel } from "./ui";
 import type { Screen, ViewProps, Selection } from "./overview";
@@ -103,6 +104,16 @@ function People({ open }: ViewProps) {
   </>;
 }
 
+function summarizeParams(kind: string, params: Record<string, unknown>, max = 300): string {
+  let text: string;
+  try {
+    text = JSON.stringify(hideSecretParams(kind, params ?? {})) ?? "";
+  } catch {
+    text = String(params ?? "");
+  }
+  return text.length > max ? `${text.slice(0, max)}…` : text;
+}
+
 function ComputerAgentApprovals() {
   const [approvals, setApprovals] = useState<AgentApproval[]>([]);
   const [notes, setNotes] = useState<Record<string, string>>({});
@@ -166,7 +177,8 @@ function ComputerAgentApprovals() {
         <span className="eyebrow">{approval.kind}</span>
         <strong>{approval.title}</strong>
         <span className="muted">{approval.reason}</span>
-        <small className="muted">Requested by {approval.createdBy} · {dateLabel(approval.createdAt)}</small>
+        <small className="mono muted">{summarizeParams(approval.kind, approval.params)}</small>
+        <small className="muted">Requested by {approval.createdBy} · {dateLabel(approval.createdAt)}{approval.expiresAt ? ` · Expires ${dateLabel(approval.expiresAt)}` : ""}</small>
         {approval.status === "pending"
           ? <label className="detail-field"><span className="muted">Decision note (required to reject)</span><input aria-label={`Decision note for ${approval.title}`} placeholder="Why is this being rejected?" value={notes[approval.id] || ""} onChange={event => setNotes(current => ({ ...current, [approval.id]: event.target.value }))} /></label>
           : approval.note ? <small className="muted">Note: {approval.note}</small> : null}
@@ -243,6 +255,51 @@ function Systems({ open }: ViewProps) {
   </>;
 }
 
+function formatBytes(size: unknown): string {
+  if (typeof size !== "number" || !Number.isFinite(size) || size < 0) return "—";
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function AgentArtifacts() {
+  const [artifacts, setArtifacts] = useState<ArtifactMeta[] | null>(null);
+  const [reachable, setReachable] = useState(true);
+  const tokenMode = getOwnerTokenMode();
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      try {
+        const next = await listArtifacts();
+        if (!cancelled) {
+          setArtifacts(next);
+          setReachable(true);
+        }
+      } catch {
+        if (!cancelled) {
+          setArtifacts([]);
+          setReachable(false);
+        }
+      }
+    }
+    load();
+    return () => { cancelled = true; };
+  }, []);
+
+  return <section>
+    <SectionTitle title="AGENT ARTIFACTS" count={artifacts?.length ?? 0} />
+    {!reachable && <div className="notice"><FileText size={18} /><span>Agent artifacts could not be loaded. The control plane is unreachable.</span></div>}
+    {tokenMode && <div className="notice"><ShieldCheck size={18} /><span>Owner-token mode is on. Direct download links are hidden; fetch artifacts with an authorized request instead.</span></div>}
+    {artifacts && artifacts.length > 0 && <div className="list-panel">{artifacts.map(artifact => <article className="list-row" key={artifact.id}>
+      <FileText size={21} />
+      <div className="row-main"><strong>{artifact.name}</strong><span className="muted">{artifact.kind} · {formatBytes(artifact.size)} · sha {typeof artifact.sha256 === "string" ? artifact.sha256.slice(0, 8) : "—"}</span><small className="muted">{dateLabel(artifact.createdAt)}{artifact.jobId ? ` · job ${artifact.jobId}` : ""}</small></div>
+      {!tokenMode && <a className="text-link" href={artifactDownloadUrl(artifact.id)} download>Download</a>}
+    </article>)}</div>}
+    {artifacts && !artifacts.length && reachable && <Empty title="No agent artifacts">Files produced by workstation jobs will appear here.</Empty>}
+  </section>;
+}
+
 function Files({ open }: ViewProps) {
   const { state } = useStore();
   const [query, setQuery] = useState("");
@@ -254,6 +311,7 @@ function Files({ open }: ViewProps) {
     <div className="toolbar"><SearchField value={query} onChange={setQuery} placeholder="Search files or creators" /><SelectFilter label="Projects" value={project} onChange={setProject} options={projects.map(value => ({ value, label: value }))} /></div>
     <SectionTitle title="ARTIFACTS" count={files.length} />
     <div className="list-panel">{files.map(file => <button className="list-row" key={file.id} onClick={() => open({ type: "file", id: file.id })}><FileText size={21} /><div className="row-main"><strong>{file.name}</strong><span className="muted">{file.project} · {file.kind} · {file.size}</span><small className="muted">{state.goals.find(goal => goal.id === file.goalId)?.title || "Goal unavailable"} · {file.createdBy} · {dateLabel(file.createdAt)}</small></div><ArrowUpRight size={16} /></button>)}{!files.length && <Empty title="No matching files">Try another project or search term.</Empty>}</div>
+    <AgentArtifacts />
   </>;
 }
 
@@ -292,13 +350,32 @@ function AI({ command, navigate }: ViewProps) {
   </>;
 }
 
+function parseDomainLines(text: string): string[] {
+  return text.split("\n").map(line => line.trim().toLowerCase()).filter(line => line.length > 0);
+}
+
 function ComputerAgentPolicy() {
   const [policy, setPolicy] = useState<Policy | null>(null);
   const [draft, setDraft] = useState<Policy["capabilities"] | null>(null);
+  const [roots, setRoots] = useState<string[]>([]);
+  const [newRoot, setNewRoot] = useState("");
+  const [allowedText, setAllowedText] = useState("");
+  const [blockedText, setBlockedText] = useState("");
+  const [tokenInput, setTokenInput] = useState("");
+  const [tokenSet, setTokenSet] = useState(false);
+  const [tokenNote, setTokenNote] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
   const [reachable, setReachable] = useState(true);
+
+  function applyPolicy(next: Policy) {
+    setPolicy(next);
+    setDraft({ ...next.capabilities });
+    setRoots(Array.isArray(next.roots) ? [...next.roots] : []);
+    setAllowedText(Array.isArray(next.domains?.allowed) ? next.domains.allowed.join("\n") : "");
+    setBlockedText(Array.isArray(next.domains?.blocked) ? next.domains.blocked.join("\n") : "");
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -306,17 +383,53 @@ function ComputerAgentPolicy() {
       try {
         const next = await getPolicy();
         if (!cancelled) {
-          setPolicy(next);
-          setDraft({ ...next.capabilities });
+          applyPolicy(next);
+          setTokenSet(getOwnerTokenMode());
           setReachable(true);
         }
       } catch {
-        if (!cancelled) setReachable(false);
+        if (!cancelled) {
+          setReachable(false);
+          setTokenSet(getOwnerTokenMode());
+        }
       }
     }
     load();
     return () => { cancelled = true; };
   }, []);
+
+  function addRoot() {
+    const trimmed = newRoot.trim();
+    if (!trimmed) {
+      setError("Root path is required.");
+      return;
+    }
+    setError(null);
+    setRoots(current => [...current, trimmed]);
+    setNewRoot("");
+    setSaved(false);
+  }
+
+  function removeRoot(index: number) {
+    setRoots(current => current.filter((_, i) => i !== index));
+    setSaved(false);
+  }
+
+  function handleSetToken() {
+    const trimmed = tokenInput.trim();
+    if (!trimmed) return;
+    setOwnerToken(trimmed);
+    setTokenInput("");
+    setTokenSet(true);
+    setTokenNote("Owner token saved in this browser.");
+  }
+
+  function handleClearToken() {
+    clearOwnerToken();
+    setTokenInput("");
+    setTokenSet(false);
+    setTokenNote("Owner token cleared.");
+  }
 
   async function save() {
     if (!policy || !draft) return;
@@ -324,9 +437,13 @@ function ComputerAgentPolicy() {
     setError(null);
     setSaved(false);
     try {
-      const next = await putPolicy({ version: policy.version, capabilities: draft });
-      setPolicy(next);
-      setDraft({ ...next.capabilities });
+      const next = await putPolicy({
+        version: 2,
+        capabilities: draft,
+        roots,
+        domains: { allowed: parseDomainLines(allowedText), blocked: parseDomainLines(blockedText) },
+      });
+      applyPolicy(next);
       setSaved(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Save failed");
@@ -358,6 +475,30 @@ function ComputerAgentPolicy() {
       </div>)}
       {error && <p className="error-text">{error}</p>}
       {saved && <p className="muted">Policy saved.</p>}
+      <SectionTitle title="AUTHORIZED ROOTS" />
+      <p className="muted">Every file job must resolve inside one of these roots. Empty means the server workspace default applies. The server validates that each entry is absolute.</p>
+      {roots.length ? <div className="list-panel">{roots.map((root, index) => <div className="list-row" key={`${root}-${index}`}>
+        <div className="row-main"><span className="mono">{root}</span></div>
+        <button className="button small" aria-label={`Remove root ${root}`} onClick={() => removeRoot(index)}>Remove</button>
+      </div>)}</div> : <p className="muted">No extra roots configured.</p>}
+      <div className="toolbar">
+        <label className="detail-field"><span className="muted">Add root</span><input aria-label="Add authorized root" placeholder="C:\work\project" value={newRoot} onChange={event => setNewRoot(event.target.value)} /></label>
+        <button className="button small" onClick={addRoot}>Add</button>
+      </div>
+      <SectionTitle title="BROWSER DOMAINS" />
+      <p className="muted">One host per line. Entries are trimmed and lowercased before saving; the server validates each host.</p>
+      <div className="toolbar">
+        <label className="detail-field"><span className="muted">Allowed domains</span><textarea aria-label="Allowed domains, one per line" rows={4} value={allowedText} onChange={event => { setAllowedText(event.target.value); setSaved(false); }} /></label>
+        <label className="detail-field"><span className="muted">Blocked domains</span><textarea aria-label="Blocked domains, one per line" rows={4} value={blockedText} onChange={event => { setBlockedText(event.target.value); setSaved(false); }} /></label>
+      </div>
+      <SectionTitle title="OWNER TOKEN" />
+      <p className="muted">Owner&apos;s browser only. Required only when the server sets WAVES_OWNER_TOKEN. Stored in this browser only and sent as an Authorization header with control-plane requests.</p>
+      <div className="toolbar">
+        <label className="detail-field"><span className="muted">{tokenSet ? "Owner token is set" : "Owner token"}</span><input type="password" aria-label="Owner token" placeholder={tokenSet ? "••••••••" : "Paste owner token"} value={tokenInput} onChange={event => setTokenInput(event.target.value)} /></label>
+        <button className="button small primary" disabled={!tokenInput.trim()} onClick={handleSetToken}>Set</button>
+        <button className="button small" disabled={!tokenSet && !tokenInput} onClick={handleClearToken}>Clear</button>
+      </div>
+      {tokenNote && <p className="muted">{tokenNote}</p>}
       <div className="toolbar"><button className="button primary" disabled={saving || !draft} onClick={save}>{saving ? "Saving…" : "Save policy"}</button></div>
     </div>}
   </section>;

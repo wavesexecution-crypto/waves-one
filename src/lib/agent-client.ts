@@ -1,4 +1,6 @@
-import type { CapabilityId, JobKind, JobStatus, Policy } from "./agent-protocol";
+import type { ArtifactMeta, CapabilityId, JobKind, JobStatus, Policy, Telemetry } from "./agent-protocol";
+
+const OWNER_TOKEN_KEY = "waves-owner-token";
 
 export interface ControlStatus {
   stopped: boolean;
@@ -6,6 +8,7 @@ export interface ControlStatus {
   deviceCount: number;
   onlineCount: number;
   queuedJobs: number;
+  runningJobs: number;
 }
 
 export interface DeviceStatus {
@@ -16,6 +19,24 @@ export interface DeviceStatus {
   lastHeartbeat: string | null;
   agentVersion: string;
   currentJobId: string | null;
+  credentialRotatedAt?: string | null;
+  telemetry?: Telemetry;
+}
+
+export interface JobAttempt {
+  deviceId: string;
+  startedAt: string;
+  endedAt?: string;
+  outcome?: string;
+}
+
+export interface JobResult {
+  ok: boolean;
+  output?: unknown;
+  error?: string;
+  stderr?: string;
+  exitCode?: number | null;
+  durationMs?: number;
 }
 
 export interface AgentJob {
@@ -28,8 +49,12 @@ export interface AgentJob {
   goalId?: string | null;
   requestedBy: string;
   createdAt: string;
+  expiresAt?: string;
   status: JobStatus;
-  result?: unknown;
+  authorizedAt?: string;
+  attempts?: JobAttempt[];
+  cancelRequested?: boolean;
+  result?: JobResult;
   error?: string | null;
 }
 
@@ -43,6 +68,7 @@ export interface AgentApproval {
   status: "pending" | "approved" | "rejected";
   createdBy: string;
   createdAt: string;
+  expiresAt?: string;
   decidedAt?: string;
   note?: string;
 }
@@ -64,6 +90,50 @@ export interface AuditRecord {
   after?: unknown;
 }
 
+export function getOwnerToken(): string | null {
+  try {
+    if (typeof window === "undefined" || typeof localStorage === "undefined") return null;
+    const token = localStorage.getItem(OWNER_TOKEN_KEY);
+    return token && token.length ? token : null;
+  } catch {
+    return null;
+  }
+}
+
+export function getOwnerTokenMode(): boolean {
+  return getOwnerToken() !== null;
+}
+
+export function setOwnerToken(token: string): void {
+  try {
+    localStorage.setItem(OWNER_TOKEN_KEY, token);
+  } catch {
+    /* owner token is a browser-only convenience */
+  }
+}
+
+export function clearOwnerToken(): void {
+  try {
+    localStorage.removeItem(OWNER_TOKEN_KEY);
+  } catch {
+    /* nothing to clear */
+  }
+}
+
+export function artifactDownloadUrl(id: string): string {
+  return `/api/control/artifacts/${encodeURIComponent(id)}`;
+}
+
+/** Display-only redaction: browser.type secret text never renders in readable form. */
+export function hideSecretParams(kind: string, params: Record<string, unknown>): Record<string, unknown> {
+  if (kind === "browser.type" && params && typeof params.text === "string") {
+    const { text: _secret, ...rest } = params;
+    void _secret;
+    return { ...rest, text: "[secret withheld]" };
+  }
+  return params;
+}
+
 async function parseBody(response: Response): Promise<Record<string, unknown>> {
   try {
     const json = await response.json();
@@ -76,15 +146,23 @@ async function parseBody(response: Response): Promise<Record<string, unknown>> {
 
 async function request<T>(path: string, init?: RequestInit, unwrap?: (body: Record<string, unknown>) => T): Promise<T> {
   let response: Response;
+  const ownerToken = getOwnerToken();
   try {
     response = await fetch(path, {
       ...init,
-      headers: { "Content-Type": "application/json", ...(init?.headers || {}) },
+      headers: {
+        "Content-Type": "application/json",
+        ...(ownerToken ? { Authorization: `Bearer ${ownerToken}` } : {}),
+        ...(init?.headers || {}),
+      },
     });
   } catch {
     throw new Error("Control plane unreachable");
   }
   const body = await parseBody(response);
+  if (response.status === 401) {
+    throw new Error("Owner authorization required (set the owner token in Settings)");
+  }
   if (!response.ok) {
     const message = typeof body.error === "string" && body.error ? body.error : "Request failed";
     const needsApproval = body.needsApproval === true ? " (requires approval)" : "";
@@ -105,6 +183,7 @@ export function getStatus(): Promise<ControlStatus> {
     deviceCount: typeof body.deviceCount === "number" ? body.deviceCount : 0,
     onlineCount: typeof body.onlineCount === "number" ? body.onlineCount : 0,
     queuedJobs: typeof body.queuedJobs === "number" ? body.queuedJobs : 0,
+    runningJobs: typeof body.runningJobs === "number" ? body.runningJobs : 0,
   }));
 }
 
@@ -119,15 +198,18 @@ export function pairDevice(code: string): Promise<{ deviceId: string; machine: s
   }));
 }
 
-export function createJob(input: { kind: JobKind; params: Record<string, unknown>; approvalId?: string; goalId?: string }): Promise<{ job: AgentJob }> {
-  return request("/api/control/jobs", { method: "POST", body: JSON.stringify(input) }, body => ({ job: body.job as AgentJob }));
+export function createJob(input: { kind: JobKind; params: Record<string, unknown>; approvalId?: string; goalId?: string; idempotencyKey?: string }): Promise<{ job: AgentJob; deduped?: boolean }> {
+  return request("/api/control/jobs", { method: "POST", body: JSON.stringify(input) }, body => ({
+    job: body.job as AgentJob,
+    deduped: body.deduped === true ? true : undefined,
+  }));
 }
 
 export function listJobs(limit = 20): Promise<AgentJob[]> {
   return request<AgentJob[]>(`/api/control/jobs?limit=${limit}`, undefined, body => asArray<AgentJob>(body.jobs));
 }
 
-export function createApproval(input: { title: string; kind: string; params: Record<string, unknown>; reason: string; goalId?: string }): Promise<{ approval: AgentApproval }> {
+export function createApproval(input: { title: string; kind: string; params: Record<string, unknown>; reason: string; goalId?: string; idempotencyKey?: string }): Promise<{ approval: AgentApproval }> {
   return request("/api/control/approvals", { method: "POST", body: JSON.stringify(input) }, body => ({ approval: body.approval as AgentApproval }));
 }
 
@@ -152,6 +234,10 @@ export function putPolicy(policy: Policy): Promise<Policy> {
 
 export function listAudit(limit = 100): Promise<AuditRecord[]> {
   return request<AuditRecord[]>(`/api/control/audit?limit=${limit}`, undefined, body => asArray<AuditRecord>(body.events));
+}
+
+export function listArtifacts(): Promise<ArtifactMeta[]> {
+  return request<ArtifactMeta[]>("/api/control/artifacts", undefined, body => asArray<ArtifactMeta>(body.artifacts));
 }
 
 export function stopAll(cancelQueued?: boolean): Promise<{ stopped: boolean }> {

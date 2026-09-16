@@ -3,11 +3,16 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { resolveSandboxPath, redactSecrets } from '../policy.mjs';
+import { resolveAcrossRoots, redactSecrets } from '../policy.mjs';
 import { refuseOutsideRoot } from './fs.mjs';
 
 const MAX_BYTES = 50 * 1024 * 1024;
 const EXEC_EXTS = new Set(['.exe', '.msi', '.ps1', '.bat', '.cmd', '.com', '.scr', '.dll', '.reg']);
+
+function getRoots(ctx) {
+  if (Array.isArray(ctx?.roots) && ctx.roots.length) return ctx.roots;
+  return [ctx.workspaceRoot];
+}
 
 export async function execNet(params, ctx) {
   const p = params && typeof params === 'object' ? params : {};
@@ -20,9 +25,10 @@ export async function execNet(params, ctx) {
   }
   if (parsed.protocol !== 'https:') return { ok: false, error: 'Refused: only https URLs are allowed' };
   if (typeof p.dest !== 'string' || !p.dest) return { ok: false, error: 'net.download requires a dest path' };
-  const dest = resolveSandboxPath(ctx.workspaceRoot, p.dest);
-  if (!dest) return { ok: false, error: 'dest escapes sandbox' };
-  const destRefusal = await refuseOutsideRoot(ctx.workspaceRoot, dest, 'download destination');
+  const hit = resolveAcrossRoots(getRoots(ctx), p.dest, p.root);
+  if (!hit) return { ok: false, error: 'dest escapes sandbox' };
+  const dest = hit.path;
+  const destRefusal = await refuseOutsideRoot(hit.root, dest, 'download destination');
   if (destRefusal) return { ok: false, error: `Refused: ${destRefusal}` };
   const ext = path.win32.extname(dest).toLowerCase();
   if (EXEC_EXTS.has(ext) && !(p.allowExecutable === true && ctx.approvalId)) {

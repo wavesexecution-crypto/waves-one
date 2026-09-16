@@ -1,10 +1,16 @@
 // Terminal executor: spawns powershell.exe with no profile, confined cwd,
 // clamped timeout, capped + redacted output. Killable via ctx.registerKill.
+// Returns { ok, output, stderr?, exitCode? } — stderr is posted separately.
 import { spawn } from 'node:child_process';
-import { resolveSandboxPath, redactSecrets } from '../policy.mjs';
+import { resolveAcrossRoots, redactSecrets } from '../policy.mjs';
 import { refuseOutsideRoot } from './fs.mjs';
 
 const OUTPUT_CAP = 200 * 1024;
+
+function getRoots(ctx) {
+  if (Array.isArray(ctx?.roots) && ctx.roots.length) return ctx.roots;
+  return [ctx.workspaceRoot];
+}
 
 function killTree(pid) {
   return new Promise((resolve) => {
@@ -23,13 +29,21 @@ export async function execTerm(params, ctx) {
   if (typeof command !== 'string' || !command.trim()) {
     return { ok: false, error: 'term.exec requires a command string' };
   }
-  let cwd = ctx.workspaceRoot;
+  let cwd = getRoots(ctx)[0];
+  let cwdRoot = cwd;
   if (params.cwd !== undefined) {
-    const resolved = typeof params.cwd === 'string' ? resolveSandboxPath(ctx.workspaceRoot, params.cwd) : null;
-    if (!resolved) return { ok: false, error: `cwd escapes sandbox: ${params.cwd}` };
-    const linkRefusal = await refuseOutsideRoot(ctx.workspaceRoot, resolved, 'working directory');
+    const hit = typeof params.cwd === 'string'
+      ? resolveAcrossRoots(getRoots(ctx), params.cwd, params.root)
+      : null;
+    if (!hit) return { ok: false, error: `cwd escapes sandbox: ${params.cwd}` };
+    const linkRefusal = await refuseOutsideRoot(hit.root, hit.path, 'working directory');
     if (linkRefusal) return { ok: false, error: `Refused: ${linkRefusal}` };
-    cwd = resolved;
+    cwd = hit.path;
+    cwdRoot = hit.root;
+  } else if (cwd) {
+    // Default cwd stays inside the first root; still guard links.
+    const linkRefusal = await refuseOutsideRoot(cwdRoot, cwd, 'working directory');
+    if (linkRefusal) return { ok: false, error: `Refused: ${linkRefusal}` };
   }
   const timeoutSec = Math.min(Math.max(Number(params.timeoutSec ?? 120) || 120, 1), 600);
 
@@ -45,7 +59,8 @@ export async function execTerm(params, ctx) {
       return;
     }
 
-    let output = '';
+    let stdout = '';
+    let stderr = '';
     let truncated = false;
     let timedOut = false;
     let killed = false;
@@ -57,13 +72,15 @@ export async function execTerm(params, ctx) {
       clearTimeout(timer);
       resolve(result);
     };
-    const append = (chunk) => {
+    const appendStdout = (chunk) => {
       if (truncated) return;
-      output += chunk.toString('utf8');
-      if (output.length > OUTPUT_CAP) {
-        output = output.slice(0, OUTPUT_CAP);
-        truncated = true;
-      }
+      stdout += chunk.toString('utf8');
+      if (stdout.length + stderr.length > OUTPUT_CAP) truncated = true;
+    };
+    const appendStderr = (chunk) => {
+      if (truncated) return;
+      stderr += chunk.toString('utf8');
+      if (stdout.length + stderr.length > OUTPUT_CAP) truncated = true;
     };
 
     ctx.registerKill?.(() => {
@@ -81,28 +98,32 @@ export async function execTerm(params, ctx) {
       });
     }, timeoutSec * 1000);
 
-    child.stdout?.on('data', append);
-    child.stderr?.on('data', append);
+    child.stdout?.on('data', appendStdout);
+    child.stderr?.on('data', appendStderr);
     child.on('error', (err) => {
       finish({ ok: false, error: `term.exec failed to start: ${err.message}` });
     });
     child.on('close', (code) => {
       exitCode = code ?? undefined;
+      const combined = (stdout + (stderr ? `\n[stderr]\n${stderr}` : '')).slice(0, OUTPUT_CAP);
       const note = truncated ? `\n...[output truncated at ${OUTPUT_CAP / 1024}KB]` : '';
-      const out = redactSecrets(output) + note || undefined;
+      const out = redactSecrets(combined) + note || undefined;
+      const errText = stderr ? redactSecrets(stderr.slice(0, OUTPUT_CAP)) : undefined;
       if (timedOut) {
-        finish({ ok: false, error: `Timed out after ${timeoutSec}s`, output: out, exitCode });
+        finish({ ok: false, error: `Timed out after ${timeoutSec}s`, output: out, stderr: errText, exitCode });
         return;
       }
       if (killed) {
         const error = ctx.cancelReason?.() === 'stop' ? 'Stopped by owner' : 'Job cancelled by owner';
-        finish({ ok: false, error, output: out, exitCode });
+        finish({ ok: false, error, output: out, stderr: errText, exitCode });
         return;
       }
       if (code === 0) {
-        finish({ ok: true, output: redactSecrets(output) + note, exitCode: 0 });
+        const result = { ok: true, output: redactSecrets(combined) + note, exitCode: 0 };
+        if (errText) result.stderr = errText;
+        finish(result);
       } else {
-        finish({ ok: false, error: `Process exited with code ${code}`, output: out, exitCode });
+        finish({ ok: false, error: `Process exited with code ${code}`, output: out, stderr: errText, exitCode });
       }
     });
   });

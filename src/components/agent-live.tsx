@@ -33,6 +33,47 @@ function jobRiskLabel(job: AgentJob): string {
   return job.risk || "unknown";
 }
 
+function jobStatusBadge(status: string) {
+  if (status === "authorized" || status === "dispatched" || status === "verifying") {
+    return <Badge tone="info">{status}</Badge>;
+  }
+  if (status === "denied" || status === "failed") {
+    return <Badge tone="error">{status}</Badge>;
+  }
+  if (status === "expired") {
+    return <Badge tone="warning">{status}</Badge>;
+  }
+  return <StatusBadge status={status} />;
+}
+
+const ACTIVE_JOB_STATUSES = ["queued", "authorized", "dispatched", "running", "verifying"];
+
+function formatPct(value: unknown): string {
+  return typeof value === "number" && Number.isFinite(value) ? `${Math.round(value)}%` : "—";
+}
+
+function formatUptime(uptimeSec: unknown): string {
+  if (typeof uptimeSec !== "number" || !Number.isFinite(uptimeSec) || uptimeSec < 0) return "—";
+  const total = Math.floor(uptimeSec);
+  if (total < 60) return `${total}s`;
+  if (total < 3600) return `${Math.floor(total / 60)}m`;
+  return `${Math.floor(total / 3600)}h ${Math.floor(total % 3600 / 60)}m`;
+}
+
+function DeviceTelemetry({ device }: { device: DeviceStatus }) {
+  const telemetry = device.telemetry;
+  if (!telemetry) return <small className="muted">No telemetry yet</small>;
+  const tools = telemetry.tools && typeof telemetry.tools === "object" ? Object.entries(telemetry.tools) : [];
+  const browser = telemetry.browser;
+  return <div className="stack">
+    <small className="muted">CPU {formatPct(telemetry.cpuPct)} · Memory {formatPct(telemetry.memPct)} · Disk {formatPct(telemetry.diskPct)}{telemetry.diskPath ? ` (${telemetry.diskPath})` : ""}</small>
+    <small className="muted">{telemetry.user || "unknown user"} · {telemetry.os || "unknown OS"} · {typeof telemetry.procs === "number" ? `${telemetry.procs} procs` : "procs —"} · up {formatUptime(telemetry.uptimeSec)}</small>
+    <small className="muted">Credential rotated {device.credentialRotatedAt ? dateLabel(device.credentialRotatedAt) : "never"}</small>
+    {tools.length > 0 && <div className="toolbar">{tools.map(([name, version]) => <Badge key={name} tone={version ? "neutral" : "warning"}>{version ? `${name} ${version}` : `${name} missing`}</Badge>)}</div>}
+    {browser?.active && <small className="muted">Browser live{typeof browser.page === "string" && browser.page ? `: ${browser.page.length > 80 ? `${browser.page.slice(0, 80)}…` : browser.page}` : ""}{typeof browser.jobId === "string" && browser.jobId ? ` · job ${browser.jobId}` : ""} · {browser.actions ?? 0} actions · {browser.screenshots ?? 0} shots · {browser.downloads ?? 0} downloads</small>}
+  </div>;
+}
+
 export function DevicePanel() {
   const [status, setStatus] = useState<ControlStatus | null>(null);
   const [devices, setDevices] = useState<DeviceStatus[]>([]);
@@ -91,7 +132,7 @@ export function DevicePanel() {
     return () => { cancelled = true; window.clearInterval(timer); };
   }, [loadStatusDevices]);
 
-  const hasActiveJobs = jobs.some(job => job.status === "queued" || job.status === "running");
+  const hasActiveJobs = jobs.some(job => ACTIVE_JOB_STATUSES.includes(job.status));
 
   useEffect(() => {
     if (!hasActiveJobs) return;
@@ -158,7 +199,7 @@ export function DevicePanel() {
     setBusy(true);
     setError(null);
     try {
-      setStatus({ ...(status || { paused: false, deviceCount: 0, onlineCount: 0, queuedJobs: 0 }), stopped: true });
+      setStatus({ ...(status || { paused: false, deviceCount: 0, onlineCount: 0, queuedJobs: 0, runningJobs: 0 }), stopped: true });
       await stopAll(true);
       setConfirmStop(false);
       await loadStatusDevices();
@@ -217,7 +258,7 @@ export function DevicePanel() {
         </div>
       </div> : <div className="list-panel">{devices.map(device => <article className="list-row" key={device.deviceId}>
         <Badge tone={device.online ? "success" : "neutral"}>{device.online ? "Online" : "Offline"}</Badge>
-        <div className="row-main"><strong>{device.machine || device.deviceId}</strong><span className="muted">Agent {device.agentVersion || "unknown"} · Last heartbeat {device.lastHeartbeat ? dateLabel(device.lastHeartbeat) : "never"}</span>{device.currentJobId && <small className="muted">Current job <span className="mono">{device.currentJobId}</span></small>}</div>
+        <div className="row-main"><strong>{device.machine || device.deviceId}</strong><span className="muted">Agent {device.agentVersion || "unknown"} · Last heartbeat {device.lastHeartbeat ? dateLabel(device.lastHeartbeat) : "never"}</span>{device.currentJobId && <small className="muted">Current job <span className="mono">{device.currentJobId}</span></small>}<DeviceTelemetry device={device} /></div>
         <button className="button small danger" onClick={() => handleRevoke(device.deviceId, device.machine)}>Revoke</button>
       </article>)}</div>}
     </section>
@@ -236,13 +277,14 @@ export function DevicePanel() {
     {!onlineDevices.length && error && <p className="error-text">{error}</p>}
     <section>
       <SectionTitle title="JOBS" count={jobs.length}><span className="muted">Recent first</span></SectionTitle>
-      {jobs.length ? <div className="table-wrap panel"><table className="data-table"><thead><tr><th scope="col">Kind</th><th scope="col">Risk</th><th scope="col">Status</th><th scope="col">Approval</th><th scope="col">Output</th><th scope="col"><span className="muted">Actions</span></th></tr></thead><tbody>{jobs.map(job => {
+      {jobs.length ? <div className="table-wrap panel"><table className="data-table"><thead><tr><th scope="col">Kind</th><th scope="col">Risk</th><th scope="col">Status</th><th scope="col">Attempts</th><th scope="col">Expires</th><th scope="col">Approval</th><th scope="col">Output</th><th scope="col"><span className="muted">Actions</span></th></tr></thead><tbody>{jobs.map(job => {
         const risk = jobRiskLabel(job);
         const result = (job.result ?? {}) as { output?: unknown; error?: unknown };
         const output = typeof result.error === "string" && result.error
           ? `Error: ${result.error}`
           : truncateOutput(result.output);
-        return <tr key={job.id}><td><span className="mono">{job.kind}</span></td><td><Badge tone={risk === "high" ? "warning" : "neutral"}>{risk}</Badge></td><td><StatusBadge status={job.status} /></td><td>{job.approvalId ? <span className="mono">{job.approvalId}</span> : <span className="muted">—</span>}</td><td>{output ? <pre className="mono muted">{output}</pre> : <span className="muted">—</span>}</td><td>{(job.status === "queued" || job.status === "running") && <button className="button small" onClick={() => handleCancel(job.id)}>Cancel</button>}</td></tr>;
+        const attempts = Array.isArray(job.attempts) ? job.attempts.length : 0;
+        return <tr key={job.id}><td><span className="mono">{job.kind}</span></td><td><Badge tone={risk === "high" ? "warning" : "neutral"}>{risk}</Badge></td><td>{jobStatusBadge(job.status)}</td><td>{attempts}</td><td>{job.expiresAt ? <span className="mono muted">{dateLabel(job.expiresAt)}</span> : <span className="muted">—</span>}</td><td>{job.approvalId ? <span className="mono">{job.approvalId}</span> : <span className="muted">—</span>}</td><td>{output ? <pre className="mono muted">{output}</pre> : <span className="muted">—</span>}</td><td>{(job.status === "queued" || job.status === "running") && <button className="button small" onClick={() => handleCancel(job.id)}>Cancel</button>}</td></tr>;
       })}</tbody></table></div> : <Empty title="No jobs yet">Run an inspection or approve a request to see live execution here.</Empty>}
     </section>
     <section>

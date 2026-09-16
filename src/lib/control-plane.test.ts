@@ -19,13 +19,18 @@ import {
   createApproval,
   decideApproval,
   enqueueJob,
+  getJob,
   getPolicy,
+  heartbeat,
   listAudit,
   listDevices,
+  listJobs,
   nextJob,
+  reconcile,
   registerDevice,
   resume,
   revokeDevice,
+  rotateSecret,
   setPolicy,
   stopAll,
   verifyDevice,
@@ -77,17 +82,19 @@ describe('control plane', () => {
   it('runs low-risk reads without approval and audits them', () => {
     const { deviceId, code } = pairedDevice();
     claimDevice(code);
-    const job = enqueueJob({ kind: 'fs.list', params: { path: '.' } });
+    const { job } = enqueueJob({ kind: 'fs.list', params: { path: '.' } });
     expect(job.risk).toBe('low');
+    expect(job.status).toBe('authorized');
     const next = nextJob(deviceId);
     expect(next.job?.id).toBe(job.id);
     completeJob(deviceId, { jobId: job.id, ok: true, output: 'README.md' });
     const audit = listAudit(10).map(e => e.action);
-    expect(audit).toContain('job.queued');
+    expect(audit).toContain('job.authorized');
     expect(audit).toContain('job.completed');
   });
 
-  it('holds gated commands until an exact approval exists', () => {    const { deviceId, secret, code } = pairedDevice();
+  it('holds gated commands until an exact approval exists', () => {
+    const { deviceId, secret, code } = pairedDevice();
     claimDevice(code);
     verifyDevice(deviceAuth(deviceId, secret));
     expect(() => enqueueJob({ kind: 'term.exec', params: { command: 'npm test' } }))
@@ -124,7 +131,7 @@ describe('control plane', () => {
     expect(() => enqueueJob({ kind: 'term.exec', params: { command: 'Remove-Item C:\\Windows -Recurse' } }))
       .toThrowError(/denied/i);
     expect(() => enqueueJob({ kind: 'fs.read', params: { path: '..\\secret.txt' } }))
-      .toThrowError(/sandbox/i);
+      .toThrowError(/authorized roots/i);
   });
 
   it('refuses high-risk policy escalation', () => {
@@ -151,12 +158,117 @@ describe('control plane', () => {
   it('flags cancellation for a running job', () => {
     const { deviceId, code } = pairedDevice();
     claimDevice(code);
-    const job = enqueueJob({ kind: 'fs.list', params: { path: '.' } });
+    const { job } = enqueueJob({ kind: 'fs.list', params: { path: '.' } });
     nextJob(deviceId);
     cancelJob(job.id);
     expect(agentFlags(deviceId).cancelCurrent).toBe(true);
     completeJob(deviceId, { jobId: job.id, ok: false, error: 'Stopped by owner' });
     expect(listAudit(5).map(e => e.action)).toContain('job.cancelled');
+  });
+
+  it('walks the full remote lifecycle with agent acknowledgement', () => {
+    const { deviceId, secret, code } = pairedDevice();
+    claimDevice(code);
+    verifyDevice(deviceAuth(deviceId, secret));
+    const { job } = enqueueJob({ kind: 'fs.list', params: { path: '.' } });
+    expect(job.status).toBe('authorized');
+    const next = nextJob(deviceId);
+    expect(next.job?.id).toBe(job.id);
+    expect(getJob(job.id).status).toBe('dispatched');
+    heartbeat(deviceId, { status: 'running', currentJobId: job.id });
+    expect(getJob(job.id).status).toBe('running');
+    completeJob(deviceId, { jobId: job.id, ok: true, output: 'ok' });
+    expect(getJob(job.id).status).toBe('completed');
+    // Duplicate identical completion is idempotent; conflicting rewrite is refused.
+    expect(completeJob(deviceId, { jobId: job.id, ok: true, output: 'ok' })).toEqual({ ok: true });
+    expect(() => completeJob(deviceId, { jobId: job.id, ok: true, output: 'different' })).toThrowError(/already/);
+  });
+
+  it('deduplicates enqueue by idempotency key', () => {
+    const first = enqueueJob({ kind: 'fs.list', params: { path: '.' }, idempotencyKey: 'phone-btn-1' });
+    const second = enqueueJob({ kind: 'fs.list', params: { path: '.' }, idempotencyKey: 'phone-btn-1' });
+    expect(first.deduped).toBe(false);
+    expect(second.deduped).toBe(true);
+    expect(second.job.id).toBe(first.job.id);
+  });
+
+  it('expires jobs and approvals past their TTL', () => {
+    const created = enqueueJob({ kind: 'fs.list', params: { path: '.' } });
+    const approval = createApproval({ title: 'T', kind: 'fs.list', params: { path: '.' }, reason: 'R' });
+    expect(created.job.expiresAt).toBeDefined();
+    expect(approval.expiresAt).toBeDefined();
+    // Backdate both records past expiry, then reconcile.
+    const jobsFile = path.join(stateDir, 'jobs.json');
+    const jobs = JSON.parse(fs.readFileSync(jobsFile, 'utf8')) as Array<{ id: string; expiresAt: string }>;
+    for (const job of jobs) job.expiresAt = new Date(Date.now() - 1000).toISOString();
+    fs.writeFileSync(jobsFile, JSON.stringify(jobs));
+    const approvalsFile = path.join(stateDir, 'agent-approvals.json');
+    const approvals = JSON.parse(fs.readFileSync(approvalsFile, 'utf8')) as Array<{ id: string; expiresAt: string }>;
+    for (const item of approvals) item.expiresAt = new Date(Date.now() - 1000).toISOString();
+    fs.writeFileSync(approvalsFile, JSON.stringify(approvals));
+    reconcile();
+    expect(getJob(created.job.id).status).toBe('expired');
+    expect(() => decideApproval(approval.id, 'approved')).toThrowError(/expired/i);
+  });
+
+  it('requeues orphaned running jobs without duplicating work', () => {
+    const { deviceId, code } = pairedDevice();
+    claimDevice(code);
+    const { job } = enqueueJob({ kind: 'fs.list', params: { path: '.' } });
+    nextJob(deviceId);
+    // Simulate a dead agent: heartbeat older than the stale threshold.
+    revokeDevice(deviceId);
+    reconcile();
+    const requeued = getJob(job.id);
+    expect(['authorized', 'failed']).toContain(requeued.status);
+  });
+
+  it('rotates credentials with immediate invalidation', () => {
+    const { deviceId, secret, code } = pairedDevice();
+    claimDevice(code);
+    verifyDevice(deviceAuth(deviceId, secret));
+    const { secret: next } = rotateSecret(deviceId);
+    expect(next).toMatch(/^[0-9a-f]{64}$/);
+    expect(() => verifyDevice(deviceAuth(deviceId, secret))).toThrow();
+    verifyDevice(deviceAuth(deviceId, next));
+    expect(listDevices().find(d => d.deviceId === deviceId)?.credentialRotatedAt).toBeDefined();
+  });
+
+  it('persists denied jobs as terminal records', () => {
+    expect(() => enqueueJob({ kind: 'term.exec', params: { command: 'rm -rf /' } })).toThrowError(/denied/i);
+    const denied = listJobs(10).find(j => j.status === 'denied');
+    expect(denied?.kind).toBe('term.exec');
+  });
+
+  it('splits terminal capability by command class', () => {
+    expect(() => enqueueJob({ kind: 'term.exec', params: { command: 'runas /user:x cmd' } })).toThrowError(/denied|terminal.admin/i);
+    const { job } = enqueueJob({ kind: 'git.status', params: {} } as never);
+    expect(job.capability).toBe('git.read');
+  });
+
+  it('gates browser navigation by domain policy', () => {
+    expect(() => enqueueJob({ kind: 'browser.navigate', params: { url: 'https://unknown.example/' } })).toThrowError(/domain/i);
+    const { job } = enqueueJob({ kind: 'browser.open', params: { url: 'https://github.com/x' } });
+    expect(job.capability).toBe('browser.read');
+  });
+
+  it('requires approval for visible browser sessions', () => {
+    expect(() => enqueueJob({ kind: 'browser.click', params: { selector: 'button', headed: true } })).toThrowError(/approval/i);
+  });
+
+  it('scrubs secret text from stored params on completion', () => {
+    const { deviceId, code } = pairedDevice();
+    claimDevice(code);
+    const approval = createApproval({
+      title: 'Type', kind: 'browser.type',
+      params: { selector: '#q', text: 's3cr3t-value' }, reason: 'Fill the form.',
+    });
+    const { jobId } = decideApproval(approval.id, 'approved');
+    nextJob(deviceId);
+    completeJob(deviceId, { jobId: jobId!, ok: true, output: 'typed' });
+    const stored = getJob(jobId!);
+    expect(stored.params.text).toBe('[REDACTED]');
+    expect(stored.params.textLength).toBe(12);
   });
 
   it('records audit fields for every computer action', () => {

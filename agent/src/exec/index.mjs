@@ -7,6 +7,7 @@ import { execProc } from './proc.mjs';
 import { execBrowser } from './browser.mjs';
 import { execGit } from './git.mjs';
 import { execNet } from './net.mjs';
+import { execUpload } from './upload.mjs';
 
 export async function executeJob(kind, params, ctx) {
   ctx.onEvent?.('info', `Started ${kind}`);
@@ -18,7 +19,12 @@ export async function executeJob(kind, params, ctx) {
       case 'fs.write':
       case 'fs.mkdir':
       case 'fs.move':
+      case 'fs.rename':
+      case 'fs.copy':
       case 'fs.delete':
+      case 'fs.hash':
+      case 'fs.search':
+      case 'fs.meta':
         result = await execFs(kind, params, ctx);
         break;
       case 'term.exec':
@@ -30,17 +36,37 @@ export async function executeJob(kind, params, ctx) {
         result = await execProc(kind, params, ctx);
         break;
       case 'browser.open':
-        result = await execBrowser(params, ctx);
+      case 'browser.navigate':
+      case 'browser.inspect':
+      case 'browser.click':
+      case 'browser.type':
+      case 'browser.select':
+      case 'browser.scroll':
+      case 'browser.download':
+      case 'browser.upload':
+      case 'browser.screenshot':
+      case 'browser.wait':
+      case 'browser.extract':
+      case 'browser.close':
+        result = await execBrowser(params, ctx, kind);
         break;
       case 'git.status':
       case 'git.log':
       case 'git.diff':
       case 'git.commit':
       case 'git.push':
+      case 'git.pull':
+      case 'git.branch':
+      case 'git.checkout':
+      case 'github.issue':
+      case 'github.pr':
         result = await execGit(kind, params, ctx);
         break;
       case 'net.download':
         result = await execNet(params, ctx);
+        break;
+      case 'upload.artifact':
+        result = await execUpload(params, ctx);
         break;
       default:
         result = { ok: false, error: `Refused: unknown or unsupported job kind '${kind}'` };

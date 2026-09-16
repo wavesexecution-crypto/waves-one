@@ -5,6 +5,8 @@ import {
   jobCapability as tsCapability,
   redactSecrets as tsRedact,
   resolveSandboxPath as tsResolve,
+  resolveAcrossRoots as tsRoots,
+  isUrlAllowed as tsDomains,
 } from './agent-protocol';
 import * as agentPolicy from '../../agent/src/policy.mjs';
 
@@ -24,6 +26,7 @@ describe('agent policy parity', () => {
     const samples = [
       'git status', 'dir', 'npm test', 'git commit -m "fix"',
       'Remove-Item C:\\Windows -Recurse', 'rm -rf /', 'shutdown /s',
+      'runas /user:admin cmd', 'schtasks /create /tn t', 'reg add HKLM\\Sw\\x /v y',
       'node scripts/build.mjs', '',
     ];
     for (const command of samples) {
@@ -32,8 +35,18 @@ describe('agent policy parity', () => {
   });
   it('confines sandbox paths identically', () => {
     const root = 'D:\\waves-one\\workspace';
-    for (const target of ['notes/a.md', '..\\x', 'C:\\Windows', '..', 'a\\..\\b']) {
+    for (const target of ['notes/a.md', '..\\x', 'C:\\Windows', '..', 'a\\..\\b', 'notes:secret', 'a\\b:c']) {
       expect(agentPolicy.resolveSandboxPath(root, target)).toBe(tsResolve(root, target));
+    }
+  });
+  it('resolves roots and domains identically', () => {
+    const roots = ['D:\\waves-one', 'D:\\seai'];
+    for (const [target, pin] of [['a\\x', undefined], ['a\\x', 'D:\\seai'], ['..\\x', undefined], ['a', 'C:\\evil']] as const) {
+      expect(agentPolicy.resolveAcrossRoots(roots, target, pin)).toEqual(tsRoots(roots, target, pin));
+    }
+    const domains = { allowed: ['github.com', '*.vercel.com'], blocked: ['evil.github.com'] };
+    for (const url of ['https://github.com/o', 'https://evilgithub.com/', 'https://evil.github.com/', 'https://a.vercel.com/', 'https://vercel.com/', 'data:text/html,x', 'file:///C:/x']) {
+      expect(agentPolicy.isUrlAllowed(url, domains)).toBe(tsDomains(url, domains));
     }
   });
   it('redacts the same secret shapes', () => {

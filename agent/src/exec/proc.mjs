@@ -3,12 +3,17 @@
 import { spawn } from 'node:child_process';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import { resolveSandboxPath, redactSecrets } from '../policy.mjs';
+import { resolveAcrossRoots, redactSecrets } from '../policy.mjs';
 import { refuseOutsideRoot } from './fs.mjs';
 import { agentDir } from '../secret.mjs';
 
 const ALLOWLIST = new Set(['code', 'notepad', 'node', 'npm', 'python']);
 const OUTPUT_CAP = 200 * 1024;
+
+function getRoots(ctx) {
+  if (Array.isArray(ctx?.roots) && ctx.roots.length) return ctx.roots;
+  return [ctx.workspaceRoot];
+}
 
 function procsPath() {
   return path.join(agentDir(), 'procs.json');
@@ -91,17 +96,24 @@ async function start(params, ctx) {
   }
   for (const arg of args) {
     if (arg.startsWith('-')) continue;
-    if (resolveSandboxPath(ctx.workspaceRoot, arg) === null) {
+    if (resolveAcrossRoots(getRoots(ctx), arg, params.root) === null) {
       return { ok: false, error: `Refused: arg escapes sandbox: ${arg}` };
     }
   }
-  let cwd = ctx.workspaceRoot;
+  let cwd = getRoots(ctx)[0];
+  let cwdRoot = cwd;
   if (params.cwd !== undefined) {
-    const resolved = typeof params.cwd === 'string' ? resolveSandboxPath(ctx.workspaceRoot, params.cwd) : null;
-    if (!resolved) return { ok: false, error: 'cwd escapes sandbox' };
-    const linkRefusal = await refuseOutsideRoot(ctx.workspaceRoot, resolved, 'working directory');
+    const hit = typeof params.cwd === 'string'
+      ? resolveAcrossRoots(getRoots(ctx), params.cwd, params.root)
+      : null;
+    if (!hit) return { ok: false, error: 'cwd escapes sandbox' };
+    const linkRefusal = await refuseOutsideRoot(hit.root, hit.path, 'working directory');
     if (linkRefusal) return { ok: false, error: `Refused: ${linkRefusal}` };
-    cwd = resolved;
+    cwd = hit.path;
+    cwdRoot = hit.root;
+  } else {
+    const linkRefusal = await refuseOutsideRoot(cwdRoot, cwd, 'working directory');
+    if (linkRefusal) return { ok: false, error: `Refused: ${linkRefusal}` };
   }
   let child;
   try {

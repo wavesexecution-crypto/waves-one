@@ -3,25 +3,38 @@
 // (defense in depth), execute one job at a time, report results.
 // Windows-first, zero npm dependencies. Never logs the device secret.
 import os from 'node:os';
+import crypto from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import { loadIdentity, AGENT_VERSION } from './secret.mjs';
 import {
   JOB_KINDS,
-  jobCapability,
+  effectiveCapability,
   jobRisk,
   validatePolicy,
   classifyCommand,
-  resolveSandboxPath,
+  resolveAcrossRoots,
   redactSecrets,
 } from './policy.mjs';
+import { collectTelemetry, getLastCpuSample } from './telemetry.mjs';
 import { executeJob } from './exec/index.mjs';
 
 const POLL_MS = 2000;
 const HEARTBEAT_MS = 10000;
 const BACKOFFS_MS = [2000, 5000, 15000, 30000];
 const DEFAULT_SERVER = 'http://127.0.0.1:3100';
-const WORKSPACE_ROOT = process.env.WORKSPACE_ROOT || 'D:\\waves-one\\workspace';
-const PATH_FIELDS = ['path', 'from', 'to', 'cwd'];
+const DEFAULT_ROOT = 'D:\\waves-one\\workspace';
+const PATH_FIELDS = ['path', 'from', 'to', 'cwd', 'dest', 'src'];
+
+export function getRoots() {
+  const raw = process.env.WORKSPACE_ROOTS;
+  if (typeof raw === 'string' && raw.trim()) {
+    const roots = raw.split(/[;\r\n]+/).map((s) => s.trim()).filter(Boolean);
+    if (roots.length) return roots;
+  }
+  const legacy = process.env.WORKSPACE_ROOT;
+  if (typeof legacy === 'string' && legacy.trim()) return [legacy.trim()];
+  return [DEFAULT_ROOT];
+}
 
 function parseArgs(argv) {
   let server = DEFAULT_SERVER;
@@ -94,9 +107,22 @@ async function flushEvents(server, identity) {
   }
 }
 
-async function sendHeartbeat(server, identity, status, currentJobId) {
+let cpuPrev = null;
+
+async function currentTelemetry(roots) {
+  try {
+    const telemetry = await collectTelemetry(cpuPrev, roots);
+    cpuPrev = getLastCpuSample();
+    return telemetry;
+  } catch {
+    return {};
+  }
+}
+
+async function sendHeartbeat(server, identity, status, currentJobId, telemetry) {
   const body = { status, machine: os.hostname(), agentVersion: AGENT_VERSION };
   if (currentJobId) body.currentJobId = currentJobId;
+  if (telemetry && typeof telemetry === 'object') body.telemetry = telemetry;
   await api(server, identity, 'POST', '/api/agent/heartbeat', body);
 }
 
@@ -104,6 +130,7 @@ async function postResult(server, identity, payload) {
   const body = { ...payload };
   if (typeof body.output === 'string') body.output = redactSecrets(body.output);
   if (typeof body.error === 'string') body.error = redactSecrets(body.error);
+  if (typeof body.stderr === 'string') body.stderr = redactSecrets(body.stderr);
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
       await api(server, identity, 'POST', '/api/agent/result', body);
@@ -117,22 +144,11 @@ async function postResult(server, identity, payload) {
 }
 
 // --- job validation (defense in depth; server pre-validates too) ---
-function validateJob(job, policy, workspaceRoot) {
+function validateJob(job, policy, roots) {
   if (!job || typeof job.kind !== 'string' || !JOB_KINDS.includes(job.kind)) {
     return { valid: false, error: `Refused: unknown or unsupported job kind '${job?.kind}'` };
   }
   const params = job.params && typeof job.params === 'object' ? job.params : {};
-  let policyValue;
-  try {
-    if (!policy) throw new Error('missing policy');
-    validatePolicy(policy);
-    policyValue = policy.capabilities[jobCapability(job.kind)];
-  } catch (err) {
-    return { valid: false, error: `Refused: invalid policy in poll response (${err.message})` };
-  }
-  if (policyValue !== 'allowed' && policyValue !== 'approval') {
-    return { valid: false, error: `Refused: capability '${jobCapability(job.kind)}' is denied by policy` };
-  }
   let commandClass;
   if (job.kind === 'term.exec') {
     if (typeof params.command !== 'string' || !params.command.trim()) {
@@ -143,15 +159,30 @@ function validateJob(job, policy, workspaceRoot) {
       return { valid: false, error: 'Refused: command denied by policy', audit: true };
     }
   }
+  let policyValue;
+  try {
+    if (!policy) throw new Error('missing policy');
+    validatePolicy(policy);
+    policyValue = policy.capabilities[effectiveCapability(job.kind, commandClass)];
+  } catch (err) {
+    return { valid: false, error: `Refused: invalid policy in poll response (${err.message})` };
+  }
+  if (policyValue !== 'allowed' && policyValue !== 'approval') {
+    return { valid: false, error: `Refused: capability '${effectiveCapability(job.kind, commandClass)}' is denied by policy` };
+  }
   const risk = jobRisk(job.kind, commandClass);
   if (policyValue === 'approval' || risk !== 'low') {
     if (typeof job.approvalId !== 'string' || !job.approvalId) {
       return { valid: false, error: `Refused: ${job.kind} requires an approved approvalId` };
     }
   }
+  const pinned = params.root !== undefined ? params.root : undefined;
+  if (pinned !== undefined && typeof pinned !== 'string') {
+    return { valid: false, error: 'Refused: invalid root pin' };
+  }
   for (const field of PATH_FIELDS) {
     if (params[field] !== undefined) {
-      if (typeof params[field] !== 'string' || resolveSandboxPath(workspaceRoot, params[field]) === null) {
+      if (typeof params[field] !== 'string' || resolveAcrossRoots(roots, params[field], pinned) === null) {
         return { valid: false, error: `Refused: ${field} escapes sandbox` };
       }
     }
@@ -159,15 +190,15 @@ function validateJob(job, policy, workspaceRoot) {
   return { valid: true, params };
 }
 
-async function runJob(server, identity, job, policy) {
+async function runJob(server, identity, job, policy, roots) {
   const startedAt = Date.now();
   try {
-    await sendHeartbeat(server, identity, 'running', job.id);
+    await sendHeartbeat(server, identity, 'running', job.id, await currentTelemetry(roots));
   } catch (err) {
     log(`heartbeat failed: ${err.message}`);
   }
 
-  const check = validateJob(job, policy, WORKSPACE_ROOT);
+  const check = validateJob(job, policy, roots);
   if (!check.valid) {
     queueEvent('warning', `Refused ${job.kind} (${job.id}): ${check.error}`, job.id);
     await flushEvents(server, identity);
@@ -178,16 +209,49 @@ async function runJob(server, identity, job, policy) {
       durationMs: Date.now() - startedAt,
     });
     try {
-      await sendHeartbeat(server, identity, 'idle');
+      await sendHeartbeat(server, identity, 'idle', undefined, await currentTelemetry(roots));
     } catch { /* next loop retries */ }
     return;
   }
 
   const cancel = { cancelled: false, reason: null, kill: null };
   const ctx = {
-    workspaceRoot: WORKSPACE_ROOT,
+    workspaceRoot: roots[0],
+    roots,
     approvalId: job.approvalId,
     jobId: job.id,
+    serverUrl: server,
+    authHeader: () => `Bearer ${identity.deviceId}.${identity.secret}`,
+    policy,
+    uploadArtifact: async ({ name, kind, mime, data }) => {
+      const buf = Buffer.isBuffer(data) ? data : Buffer.from(data ?? '');
+      const size = buf.length;
+      const sha256 = crypto.createHash('sha256').update(buf).digest('hex');
+      const res = await fetch(`${server}/api/agent/artifacts`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          authorization: `Bearer ${identity.deviceId}.${identity.secret}`,
+        },
+        body: JSON.stringify({
+          jobId: job.id,
+          name,
+          kind: kind || 'file',
+          mime: mime || 'application/octet-stream',
+          dataBase64: buf.toString('base64'),
+        }),
+      });
+      const text = await res.text();
+      let body = null;
+      try {
+        body = text ? JSON.parse(text) : null;
+      } catch {
+        throw new Error(`HTTP ${res.status}: invalid JSON response`);
+      }
+      if (!res.ok) throw new Error(`HTTP ${res.status}: ${body?.error ?? text ?? res.statusText}`);
+      const artifactId = body?.artifactId ?? body?.id;
+      return { artifactId, size, sha256 };
+    },
     onEvent: (level, message) => queueEvent(level, message, job.id),
     isCancelled: () => cancel.cancelled,
     cancelReason: () => cancel.reason,
@@ -225,14 +289,17 @@ async function runJob(server, identity, job, policy) {
     clearInterval(watcher);
   }
 
+  let outcome;
   if (cancel.cancelled) {
+    outcome = cancel.reason === 'stop' ? 'stopped' : 'cancelled';
     result = {
       ok: false,
       error: cancel.reason === 'stop' ? 'Stopped by owner' : 'Job cancelled by owner',
       output: result?.output,
+      stderr: result?.stderr,
     };
   }
-  await postResult(server, identity, {
+  const payload = {
     jobId: job.id,
     ok: result.ok,
     output: result.output,
@@ -241,10 +308,13 @@ async function runJob(server, identity, job, policy) {
     after: result.after,
     exitCode: result.exitCode,
     durationMs: Date.now() - startedAt,
-  });
+  };
+  if (typeof result.stderr === 'string' && result.stderr) payload.stderr = result.stderr;
+  if (outcome) payload.outcome = outcome;
+  await postResult(server, identity, payload);
   await flushEvents(server, identity);
   try {
-    await sendHeartbeat(server, identity, 'idle');
+    await sendHeartbeat(server, identity, 'idle', undefined, await currentTelemetry(roots));
   } catch (err) {
     log(`heartbeat failed: ${err.message}`);
   }
@@ -252,6 +322,7 @@ async function runJob(server, identity, job, policy) {
 
 async function main() {
   const { server } = parseArgs(process.argv);
+  const roots = getRoots();
   let identity;
   try {
     identity = await loadIdentity();
@@ -259,8 +330,10 @@ async function main() {
     console.error(err.message);
     process.exit(1);
   }
-  await fs.mkdir(WORKSPACE_ROOT, { recursive: true });
-  log(`agent starting (device ${identity.deviceId}, server ${server}, workspace ${WORKSPACE_ROOT})`);
+  for (const root of roots) {
+    await fs.mkdir(root, { recursive: true });
+  }
+  log(`agent starting (device ${identity.deviceId}, server ${server}, roots ${roots.join('; ')})`);
 
   let failCount = 0;
   let lastHeartbeat = 0;
@@ -290,7 +363,7 @@ async function main() {
 
     if (Date.now() - lastHeartbeat > HEARTBEAT_MS || lastHeartbeatStatus !== 'idle') {
       try {
-        await sendHeartbeat(server, identity, 'idle');
+        await sendHeartbeat(server, identity, 'idle', undefined, await currentTelemetry(roots));
         lastHeartbeat = Date.now();
         lastHeartbeatStatus = 'idle';
       } catch (err) {
@@ -303,7 +376,7 @@ async function main() {
       await sleep(POLL_MS);
       continue;
     }
-    await runJob(server, identity, job, policy);
+    await runJob(server, identity, job, policy, roots);
     lastHeartbeat = 0;
     lastHeartbeatStatus = '';
   }

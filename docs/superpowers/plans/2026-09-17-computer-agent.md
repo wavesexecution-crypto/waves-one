@@ -1,4 +1,6 @@
-# Computer Agent Phase 1 — Implementation Plan
+# Computer Agent Phase 1 — Implementation Plan (SHIPPED e041c19)
+
+Phase 2A+2B+2C below extends this foundation without rewriting it.
 
 **Goal:** Real local Computer Agent executing supervised jobs on the authorized Windows workstation behind the existing CEO loop. No simulation for paired devices.
 

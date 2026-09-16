@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Activity, Bot, CircleCheck, FolderOpen, LayoutGrid, ListChecks, MoreHorizontal, Plus, Settings, ShieldCheck, Target, Terminal, TriangleAlert, Users } from "lucide-react";
 import { StoreProvider, useStore } from "./store";
 import { Brand, Modal } from "./ui";
+import { getStatus, resume, stopAll } from "../lib/agent-client";
 import { Overview, type Screen, type Selection } from "./overview";
 import { Workspace } from "./workspace";
 import { CommandFlow, DetailFlow, GoalFlow } from "./flows";
@@ -22,6 +23,73 @@ const NAV: { screen: Screen; icon: typeof Target; primary?: boolean }[] = [
 ];
 
 const MORE_SCREENS: Screen[] = ["Goals", "People", "Systems", "Files", "AI", "Settings"];
+
+function TopStopControl() {
+  const [snapshot, setSnapshot] = useState<{ stopped: boolean; runningJobs: number } | null>(null);
+  const [armed, setArmed] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function poll() {
+      try {
+        const next = await getStatus();
+        if (cancelled) return;
+        setSnapshot({ stopped: next.stopped, runningJobs: next.runningJobs });
+        if (next.runningJobs === 0) setArmed(false);
+      } catch {
+        /* fail-silent: control plane unreachable */
+      }
+    }
+    void poll();
+    const timer = window.setInterval(() => { void poll(); }, 5000);
+    return () => { cancelled = true; window.clearInterval(timer); };
+  }, []);
+
+  async function refresh() {
+    try {
+      const next = await getStatus();
+      setSnapshot({ stopped: next.stopped, runningJobs: next.runningJobs });
+      if (next.runningJobs === 0) setArmed(false);
+    } catch {
+      /* fail-silent */
+    }
+  }
+
+  async function handleStop() {
+    if (!armed) {
+      setArmed(true);
+      return;
+    }
+    setBusy(true);
+    try {
+      await stopAll(true);
+      setArmed(false);
+      await refresh();
+    } catch {
+      /* fail-silent */
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleResume() {
+    setBusy(true);
+    try {
+      await resume();
+      await refresh();
+    } catch {
+      /* fail-silent */
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!snapshot) return null;
+  if (snapshot.stopped) return <button className="button small" disabled={busy} onClick={handleResume}>Resume</button>;
+  if (snapshot.runningJobs > 0) return <button className="button small danger" disabled={busy} onClick={handleStop}>{armed ? "Confirm STOP" : `STOP ${snapshot.runningJobs}`}</button>;
+  return null;
+}
 
 function Headquarters() {
   const { state, dispatch, ready, storageError, toast, notify } = useStore();
@@ -69,6 +137,7 @@ function Headquarters() {
     <header className="top-bar">
       <button className="brand-button" onClick={() => navigate("Overview")} aria-label="Go to overview"><Brand compact /></button>
       <div className="top-actions">
+        <TopStopControl />
         <button className="icon-button bordered" aria-label="Open WAVES AI command" onClick={() => setCommand(true)}><Terminal size={18} /></button>
         <button className="button primary small" onClick={() => newGoal()}><Plus size={15} /> New goal</button>
       </div>

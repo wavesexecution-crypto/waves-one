@@ -56,3 +56,26 @@ export async function loadIdentity() {
   }
   return { deviceId: parsed.deviceId, secret: parsed.secret };
 }
+
+export async function saveIdentity(deviceId, secret) {
+  if (typeof deviceId !== 'string' || !deviceId) {
+    throw new Error('saveIdentity requires a deviceId string.');
+  }
+  if (typeof secret !== 'string' || !/^[0-9a-f]{32,}$/i.test(secret)) {
+    throw new Error('saveIdentity requires a valid secret string.');
+  }
+  await fs.mkdir(agentDir(), { recursive: true });
+  let createdAt = new Date().toISOString();
+  try {
+    const raw = await fs.readFile(identityPath(), 'utf8');
+    const existing = JSON.parse(raw);
+    if (typeof existing?.createdAt === 'string' && existing.createdAt) {
+      createdAt = existing.createdAt;
+    }
+  } catch {
+    // No usable existing identity; fresh timestamps apply.
+  }
+  const next = { deviceId, secret, createdAt, rotatedAt: new Date().toISOString() };
+  await fs.writeFile(identityPath(), JSON.stringify(next, null, 2));
+  return { deviceId };
+}
