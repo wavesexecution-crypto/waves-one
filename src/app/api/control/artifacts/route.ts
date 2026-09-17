@@ -5,8 +5,8 @@ import { guardControl } from '@/lib/api-guards';
 export const dynamic = 'force-dynamic';
 
 export async function GET(req: Request) {
-  const blocked = guardControl(req);
+  const blocked = await guardControl(req);
   if (blocked) return blocked;
   const limit = Number(new URL(req.url).searchParams.get('limit') || 50);
-  return NextResponse.json({ artifacts: listArtifacts(limit) });
+  return NextResponse.json({ artifacts: await listArtifacts(limit) });
 }

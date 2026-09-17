@@ -7,11 +7,11 @@ export const dynamic = 'force-dynamic';
 // Revoke a workstation's authorization. Its credential stops authenticating
 // immediately; re-pairing requires physical terminal access.
 export async function POST(req: Request) {
-  const blocked = guardControl(req, 60);
+  const blocked = await guardControl(req, 60);
   if (blocked) return blocked;
   try {
     const body = await req.json();
-    return NextResponse.json(revokeDevice(body.deviceId));
+    return NextResponse.json(await revokeDevice(body.deviceId));
   } catch (error) {
     return errorResponse(error);
   }

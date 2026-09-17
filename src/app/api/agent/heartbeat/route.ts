@@ -6,11 +6,11 @@ export const dynamic = 'force-dynamic';
 
 export async function POST(req: Request) {
   try {
-    const device = verifyDevice(req.headers.get('authorization'));
-    const blocked = guardAgentDevice(device.deviceId);
+    const device = await verifyDevice(req.headers.get('authorization'));
+    const blocked = await guardAgentDevice(device.deviceId);
     if (blocked) return blocked;
     const body = await req.json();
-    return NextResponse.json(heartbeat(device.deviceId, body));
+    return NextResponse.json(await heartbeat(device.deviceId, body));
   } catch (error) {
     return errorResponse(error);
   }

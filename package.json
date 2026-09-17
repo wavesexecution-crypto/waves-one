@@ -13,8 +13,12 @@
     "agent:pair": "node agent/pair.mjs"
   },
   "dependencies": {
+    "@neondatabase/serverless": "^1.1.0",
+    "@vercel/blob": "^2.8.0",
+    "drizzle-orm": "^0.45.2",
     "lucide-react": "^1.46.0",
     "next": "16.3.5",
+    "pg": "^8.23.0",
     "playwright-core": "^1.63.0",
     "react": "19.2.8",
     "react-dom": "19.2.8"
@@ -23,10 +27,13 @@
     "@playwright/test": "^1.63.0",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^24.13.5",
+    "@types/pg": "^8.23.1",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "drizzle-kit": "^0.31.10",
     "eslint": "^9",
     "eslint-config-next": "16.3.5",
+    "pg-mem": "^3.0.14",
     "tailwindcss": "^4",
     "typescript": "^5",
     "vitest": "^5.0.1"

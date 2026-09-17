@@ -8,10 +8,10 @@ export const dynamic = 'force-dynamic';
 // the control plane answers. No inbound workstation ports.
 export async function GET(req: Request) {
   try {
-    const device = verifyDevice(req.headers.get('authorization'));
-    const blocked = guardAgentDevice(device.deviceId);
+    const device = await verifyDevice(req.headers.get('authorization'));
+    const blocked = await guardAgentDevice(device.deviceId);
     if (blocked) return blocked;
-    return NextResponse.json(nextJob(device.deviceId));
+    return NextResponse.json(await nextJob(device.deviceId));
   } catch (error) {
     return errorResponse(error);
   }

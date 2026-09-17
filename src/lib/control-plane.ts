@@ -1,5 +1,4 @@
 import { createHash, randomUUID, timingSafeEqual } from 'crypto';
-import fs from 'fs';
 import { NextResponse } from 'next/server';
 import path from 'path';
 import {
@@ -22,16 +21,34 @@ import {
   type Policy,
   type Telemetry,
 } from './agent-protocol';
+import type {
+  AgentApproval,
+  AuditRecord,
+  ControlFlags,
+  DeviceRecord,
+  DeviceStatus,
+  JobAttempt,
+  JobRecord,
+  JobResult,
+  PairingCode,
+  PublicJob,
+} from './control-plane-types';
+import { StoreConflict, getStore } from './store';
 
 // Server-side control plane for the Computer Agent (protocol v2).
-// File-backed durable stores in <repo>/.waves (gitignored, atomic writes):
-// devices, jobs (+attempts, idempotency), approvals, policy, artifacts,
-// audit log. No in-memory-only state: everything survives server restarts.
+//
+// Durable state lives behind the store abstraction (src/lib/store.ts):
+// - local dev/tests: files in <repo>/.waves (gitignored, atomic writes)
+// - Vercel production/preview: Neon PostgreSQL (source of truth; the Vercel
+//   filesystem is ephemeral, so file state would silently vanish there)
+//
+// Everything survives server restarts in both modes: no in-memory-only state.
 //
 // Trust model: localhost binding (dev) or owner-token + TLS (cloud).
 // Policy, approval binding, roots, domains, and command classification are
 // enforced HERE; the agent independently re-validates before executing.
-// The browser never sees device secrets.
+// The browser never sees device secrets or DATABASE_URL — it talks only to
+// the /api routes, which run server-side.
 
 export const AGENT_VERSION = '1.0.0';
 export const ONLINE_WINDOW_MS = 25_000;
@@ -44,27 +61,6 @@ export const MAX_ARTIFACT_BYTES = 15 * 1024 * 1024;
 
 export function workspaceRoot(): string {
   return process.env.WAVES_WORKSPACE || path.join(process.cwd(), 'workspace');
-}
-
-function dir(): string {
-  const d = process.env.WAVES_STATE_DIR || path.join(process.cwd(), '.waves');
-  fs.mkdirSync(d, { recursive: true });
-  return d;
-}
-
-function readJson<T>(name: string, fallback: T): T {
-  try {
-    return JSON.parse(fs.readFileSync(path.join(dir(), name), 'utf8')) as T;
-  } catch {
-    return fallback;
-  }
-}
-
-function writeJson(name: string, value: unknown): void {
-  const target = path.join(dir(), name);
-  const tmp = `${target}.${process.pid}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify(value, null, 2));
-  fs.renameSync(tmp, target);
 }
 
 export class ApiError extends Error {
@@ -92,49 +88,47 @@ export function errorResponse(error: unknown): NextResponse {
   return NextResponse.json({ error: 'Internal error.' }, { status: 500 });
 }
 
+// Re-exported so existing import sites keep working.
+export type {
+  AgentApproval,
+  AuditRecord,
+  DeviceRecord,
+  DeviceStatus,
+  JobAttempt,
+  JobRecord,
+  JobResult,
+  PairingCode,
+  PublicJob,
+};
+
+// ---------------------------------------------------------------------------
+// Legacy normalization (Phase-1 file rows only). Records written before the
+// v2 fields existed gain safe defaults in memory; live liveness decisions
+// stay owned by reconcile(). A live running job is never touched here.
+// ---------------------------------------------------------------------------
+
+function normalizeLegacy(job: JobRecord): JobRecord {
+  const legacy = !Array.isArray(job.attempts) || !job.expiresAt;
+  if (!legacy) return job;
+  return {
+    ...job,
+    attempts: Array.isArray(job.attempts) ? job.attempts : [],
+    expiresAt: job.expiresAt || new Date(Date.parse(job.createdAt) + JOB_TTL_MS).toISOString(),
+    ...(job.status === 'running' ? { status: 'authorized' as const, deviceId: undefined } : {}),
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Devices
 // ---------------------------------------------------------------------------
 
-export interface DeviceRecord {
-  deviceId: string;
-  secretHash: string;
-  machine: string;
-  agentVersion: string;
-  paired: boolean;
-  revoked: boolean;
-  createdAt: string;
-  credentialRotatedAt: string | null;
-  lastHeartbeat: string | null;
-  currentJobId: string | null;
-  status: 'idle' | 'running';
-  lastTelemetry?: Telemetry;
-}
-
-interface PairingCode {
-  code: string;
-  deviceId: string;
-  expiresAt: number;
-}
-
-function loadDevices(): DeviceRecord[] {
-  return readJson<DeviceRecord[]>('devices.json', []);
-}
-
-function loadCodes(): PairingCode[] {
-  const codes = readJson<PairingCode[]>('codes.json', []);
-  const live = codes.filter(c => c.expiresAt > Date.now());
-  if (live.length !== codes.length) writeJson('codes.json', live);
-  return live;
-}
-
-export function registerDevice(input: {
+export async function registerDevice(input: {
   deviceId: string;
   secretHash: string;
   machine: string;
   pairingCode: string;
   agentVersion: string;
-}): { ok: true } {
+}): Promise<{ ok: true }> {
   const { deviceId, secretHash, machine, pairingCode, agentVersion } = input;
   if (!/^[A-Za-z0-9_-]{8,64}$/.test(deviceId || '')) throw bad('Invalid deviceId.');
   if (!/^[0-9a-f]{64}$/.test(secretHash || '')) throw bad('Invalid secretHash.');
@@ -142,29 +136,32 @@ export function registerDevice(input: {
     throw bad('Invalid machine name.');
   }
   if (!/^[A-Z2-9]{8}$/.test(pairingCode || '')) throw bad('Invalid pairing code format.');
-  const devices = loadDevices();
-  const existing = devices.find(d => d.deviceId === deviceId);
+  const store = await getStore();
+  const existing = await store.getDevice(deviceId);
   if (existing?.revoked) throw forbidden('This device has been revoked. Re-pairing is not automatic.');
-  const codes = loadCodes();
+  const codes = await store.listCodes();
   const active = codes.filter(c => c.deviceId === deviceId);
   if (active.length >= 3) throw bad('Too many active pairing codes.');
-  codes.push({ code: pairingCode, deviceId, expiresAt: Date.now() + PAIRING_TTL_MS });
-  writeJson('codes.json', codes);
+  const code = pairingCode.toUpperCase();
+  if (codes.some(c => c.code === code)) throw bad('Pairing code already issued.');
+  await store.addCode({ code, deviceId, expiresAt: Date.now() + PAIRING_TTL_MS });
+  const version = typeof agentVersion === 'string' ? agentVersion.slice(0, 32) : 'unknown';
   if (existing) {
-    existing.secretHash = secretHash;
-    existing.machine = machine.trim();
-    existing.agentVersion = typeof agentVersion === 'string' ? agentVersion.slice(0, 32) : existing.agentVersion;
-    writeJson('devices.json', devices);
+    await store.saveDevice({
+      ...existing,
+      secretHash,
+      machine: machine.trim(),
+      agentVersion: typeof agentVersion === 'string' ? version : existing.agentVersion,
+    });
   } else {
-    devices.push({
+    await store.saveDevice({
       deviceId, secretHash, machine: machine.trim(),
-      agentVersion: typeof agentVersion === 'string' ? agentVersion.slice(0, 32) : 'unknown',
+      agentVersion: version || 'unknown',
       paired: false, revoked: false, createdAt: new Date().toISOString(),
       credentialRotatedAt: null, lastHeartbeat: null, currentJobId: null, status: 'idle',
     });
-    writeJson('devices.json', devices);
   }
-  appendAudit({
+  await appendAudit({
     agent: 'Control plane', machine: 'control-plane', userAuth: 'device registration',
     action: 'device.registered', target: deviceId, permission: 'system_configuration',
     result: `Pairing code issued for ${machine.trim()}. Secret stored as hash only.`,
@@ -172,39 +169,31 @@ export function registerDevice(input: {
   return { ok: true };
 }
 
-export function claimDevice(code: string): { deviceId: string; machine: string } {
-  const codes = loadCodes();
-  const match = codes.find(c => c.code === (code || '').trim().toUpperCase());
-  if (!match) throw notFound('Pairing code not found. Run the agent pairing command to issue a fresh code.');
-  if (match.expiresAt <= Date.now()) {
-    writeJson('codes.json', codes.filter(c => c.code !== match.code));
-    throw gone('Pairing code expired. Issue a fresh code from the agent.');
-  }
-  const devices = loadDevices();
-  const device = devices.find(d => d.deviceId === match.deviceId);
-  if (!device) throw notFound('Device record missing.');
-  if (device.revoked) throw forbidden('This device has been revoked.');
-  device.paired = true;
-  writeJson('devices.json', devices);
-  writeJson('codes.json', codes.filter(c => c.code !== match.code));
-  appendAudit({
-    agent: 'Amey', machine: 'WAVES ONE', userAuth: 'CEO pairing confirmation',
-    action: 'device.paired', target: device.deviceId, permission: 'system_configuration',
-    result: `${device.machine} paired. Single-use code consumed.`,
+export async function claimDevice(code: string): Promise<{ deviceId: string; machine: string }> {
+  const store = await getStore();
+  const normalized = (code || '').trim().toUpperCase();
+  return store.runInTransaction(async tx => {
+    const codes = await tx.listCodes();
+    const match = codes.find(c => c.code === normalized);
+    if (!match) throw notFound('Pairing code not found. Run the agent pairing command to issue a fresh code.');
+    if (match.expiresAt <= Date.now()) {
+      await tx.removeCode(match.code);
+      throw gone('Pairing code expired. Issue a fresh code from the agent.');
+    }
+    const device = await tx.getDeviceForUpdate(match.deviceId);
+    if (!device) throw notFound('Device record missing.');
+    if (device.revoked) throw forbidden('This device has been revoked.');
+    await tx.saveDevice({ ...device, paired: true });
+    // Single-use code: consumed exactly once, inside the same transaction.
+    await tx.removeCode(match.code);
+    await tx.auditAppend({
+      ts: new Date().toISOString(),
+      agent: 'Amey', machine: 'WAVES ONE', userAuth: 'CEO pairing confirmation',
+      action: 'device.paired', target: device.deviceId, permission: 'system_configuration',
+      result: `${device.machine} paired. Single-use code consumed.`,
+    });
+    return { deviceId: device.deviceId, machine: device.machine };
   });
-  return { deviceId: device.deviceId, machine: device.machine };
-}
-
-export interface DeviceStatus {
-  deviceId: string;
-  machine: string;
-  paired: boolean;
-  online: boolean;
-  lastHeartbeat: string | null;
-  agentVersion: string;
-  currentJobId: string | null;
-  credentialRotatedAt: string | null;
-  telemetry?: Telemetry;
 }
 
 function toStatus(d: DeviceRecord): DeviceStatus {
@@ -221,13 +210,14 @@ function toStatus(d: DeviceRecord): DeviceStatus {
   };
 }
 
-export function listDevices(): DeviceStatus[] {
-  return loadDevices()
+export async function listDevices(): Promise<DeviceStatus[]> {
+  const store = await getStore();
+  return (await store.listDevices())
     .filter(d => d.paired && !d.revoked)
     .map(toStatus);
 }
 
-export function verifyDevice(authorization: string | null): DeviceRecord {
+export async function verifyDevice(authorization: string | null): Promise<DeviceRecord> {
   if (!authorization?.startsWith('Bearer ')) throw unauthorized();
   const token = authorization.slice('Bearer '.length);
   const dot = token.lastIndexOf('.');
@@ -235,7 +225,8 @@ export function verifyDevice(authorization: string | null): DeviceRecord {
   const deviceId = token.slice(0, dot);
   const secret = token.slice(dot + 1);
   if (!/^[0-9a-f]{64}$/.test(secret)) throw unauthorized();
-  const device = loadDevices().find(d => d.deviceId === deviceId);
+  const store = await getStore();
+  const device = await store.getDevice(deviceId);
   if (!device || !device.paired || device.revoked) throw unauthorized();
   const presented = createHash('sha256').update(secret).digest();
   const expected = Buffer.from(device.secretHash, 'hex');
@@ -245,40 +236,42 @@ export function verifyDevice(authorization: string | null): DeviceRecord {
   return device;
 }
 
-export function heartbeat(deviceId: string, input: {
+export async function heartbeat(deviceId: string, input: {
   status: 'idle' | 'running'; currentJobId?: string | null; machine?: string;
   agentVersion?: string; telemetry?: Telemetry;
-}): { ok: true } {
-  const devices = loadDevices();
-  const device = devices.find(d => d.deviceId === deviceId);
+}): Promise<{ ok: true }> {
+  const store = await getStore();
+  const device = await store.getDevice(deviceId);
   if (!device) throw unauthorized();
-  device.lastHeartbeat = new Date().toISOString();
+  const next: DeviceRecord = {
+    ...device,
+    lastHeartbeat: new Date().toISOString(),
+  };
   if (input.currentJobId !== undefined) {
-    device.currentJobId = input.currentJobId;
-    device.status = input.currentJobId ? 'running' : 'idle';
+    next.currentJobId = input.currentJobId;
+    next.status = input.currentJobId ? 'running' : 'idle';
   } else {
-    device.status = input.status === 'running' ? 'running' : 'idle';
+    next.status = input.status === 'running' ? 'running' : 'idle';
   }
   if (typeof input.machine === 'string' && input.machine.trim()) {
-    device.machine = input.machine.trim().slice(0, 100);
+    next.machine = input.machine.trim().slice(0, 100);
   }
   if (typeof input.agentVersion === 'string' && input.agentVersion) {
-    device.agentVersion = input.agentVersion.slice(0, 32);
+    next.agentVersion = input.agentVersion.slice(0, 32);
   }
   if (input.telemetry && typeof input.telemetry === 'object') {
-    device.lastTelemetry = sanitizeTelemetry(input.telemetry);
+    next.lastTelemetry = sanitizeTelemetry(input.telemetry);
   }
-  writeJson('devices.json', devices);
+  await store.saveDevice(next);
   // A heartbeat acknowledges the running job: dispatched -> running.
-  if (device.currentJobId) {
-    const jobs = loadJobs();
-    const job = jobs.find(j => j.id === device.currentJobId && j.deviceId === deviceId);
-    if (job && job.status === 'dispatched') {
-      job.status = 'running';
-      writeJson('jobs.json', jobs);
+  // Conditional write: a concurrent completion wins, never the reverse.
+  if (next.currentJobId) {
+    const job = await store.findJob(next.currentJobId);
+    if (job && job.deviceId === deviceId && job.status === 'dispatched') {
+      await store.updateJobIf({ ...normalizeLegacy(job), status: 'running' }, ['dispatched']);
     }
   }
-  reconcile();
+  await reconcile();
   return { ok: true };
 }
 
@@ -319,14 +312,15 @@ function sanitizeTelemetry(input: Telemetry): Telemetry {
   return out;
 }
 
-export function revokeDevice(deviceId: string): { ok: true } {
-  const devices = loadDevices();
-  const device = devices.find(d => d.deviceId === deviceId);
+export async function revokeDevice(deviceId: string): Promise<{ ok: true }> {
+  const store = await getStore();
+  const device = await store.getDevice(deviceId);
   if (!device) throw notFound('Device not found.');
-  device.revoked = true;
-  device.currentJobId = null;
-  writeJson('devices.json', devices);
-  appendAudit({
+  // Revocation takes effect on the next authentication check: the stored
+  // hash stays, but verifyDevice refuses revoked devices, and reconcile()
+  // immediately reclaims their orphaned work.
+  await store.saveDevice({ ...device, revoked: true, currentJobId: null });
+  await appendAudit({
     agent: 'Amey', machine: 'WAVES ONE', userAuth: 'CEO revocation',
     action: 'device.revoked', target: deviceId, permission: 'system_configuration',
     result: `${device.machine} authorization revoked. Its credential no longer authenticates.`,
@@ -334,15 +328,17 @@ export function revokeDevice(deviceId: string): { ok: true } {
   return { ok: true };
 }
 
-export function rotateSecret(deviceId: string): { secret: string } {
-  const devices = loadDevices();
-  const device = devices.find(d => d.deviceId === deviceId);
+export async function rotateSecret(deviceId: string): Promise<{ secret: string }> {
+  const store = await getStore();
+  const device = await store.getDevice(deviceId);
   if (!device || !device.paired || device.revoked) throw unauthorized();
   const secret = randomUUID().replace(/-/g, '') + randomUUID().replace(/-/g, '');
-  device.secretHash = createHash('sha256').update(secret).digest('hex');
-  device.credentialRotatedAt = new Date().toISOString();
-  writeJson('devices.json', devices);
-  appendAudit({
+  await store.saveDevice({
+    ...device,
+    secretHash: createHash('sha256').update(secret).digest('hex'),
+    credentialRotatedAt: new Date().toISOString(),
+  });
+  await appendAudit({
     agent: 'Control plane', machine: device.machine, userAuth: 'device credential rotation',
     action: 'device.rotated', target: deviceId, permission: 'system_configuration',
     result: 'Device credential rotated. Previous credential invalidated immediately.',
@@ -354,19 +350,20 @@ export function rotateSecret(deviceId: string): { secret: string } {
 // Policy
 // ---------------------------------------------------------------------------
 
-export function getPolicy(): Policy {
-  const stored = readJson<Policy | { version?: number } | null>('policy.json', null);
+export async function getPolicy(): Promise<Policy> {
+  const store = await getStore();
+  const stored = await store.readPolicy();
   if (!stored || typeof stored !== 'object') {
     const fresh = structuredClone(DEFAULT_POLICY);
     fresh.roots = [workspaceRoot()];
-    writeJson('policy.json', fresh);
+    await store.writePolicy(fresh);
     return fresh;
   }
   if ((stored as { version?: number }).version !== 2) {
     const migrated = migratePolicy(stored);
     if (migrated.roots.length === 0) migrated.roots = [workspaceRoot()];
-    writeJson('policy.json', migrated);
-    appendAudit({
+    await store.writePolicy(migrated);
+    await appendAudit({
       agent: 'Control plane', machine: 'control-plane', userAuth: 'policy migration',
       action: 'policy.migrated', target: 'computer-agent', permission: 'system_configuration',
       result: 'Phase-1 policy migrated to version 2 without weakening.',
@@ -381,7 +378,7 @@ export function getPolicy(): Policy {
   return policy;
 }
 
-export function setPolicy(policy: Policy): Policy {
+export async function setPolicy(policy: Policy): Promise<Policy> {
   validatePolicy(policy);
   const next: Policy = {
     version: 2,
@@ -392,8 +389,9 @@ export function setPolicy(policy: Policy): Policy {
       blocked: policy.domains.blocked.map(h => h.trim().toLowerCase()),
     },
   };
-  writeJson('policy.json', next);
-  appendAudit({
+  const store = await getStore();
+  await store.writePolicy(next);
+  await appendAudit({
     agent: 'Amey', machine: 'WAVES ONE', userAuth: 'CEO policy change',
     action: 'policy.updated', target: 'computer-agent', permission: 'system_configuration',
     result: `Execution policy updated: ${next.roots.length} root(s), ${next.domains.allowed.length} allowed domain(s). High-risk capabilities remain non-allowable.`,
@@ -404,68 +402,6 @@ export function setPolicy(policy: Policy): Policy {
 // ---------------------------------------------------------------------------
 // Jobs
 // ---------------------------------------------------------------------------
-
-export interface JobAttempt {
-  deviceId: string;
-  startedAt: string;
-  endedAt?: string;
-  outcome?: string;
-}
-
-export interface JobResult {
-  ok: boolean;
-  output?: string;
-  error?: string;
-  stderr?: string;
-  before?: unknown;
-  after?: unknown;
-  exitCode?: number;
-  durationMs?: number;
-  outcome?: 'stopped' | 'cancelled';
-}
-
-export interface JobRecord {
-  id: string;
-  kind: JobKind;
-  params: Record<string, unknown>;
-  capability: string;
-  risk: string;
-  approvalId?: string;
-  goalId?: string;
-  idempotencyKey?: string;
-  requestedBy: string;
-  deviceId?: string;
-  createdAt: string;
-  expiresAt: string;
-  status: JobStatus;
-  authorizedAt?: string;
-  cancelRequested?: boolean;
-  attempts: JobAttempt[];
-  result?: JobResult;
-}
-
-function loadJobs(): JobRecord[] {
-  const jobs = readJson<JobRecord[]>('jobs.json', []);
-  // Lazy migration of Phase-1 records ONLY (recognized by missing v2
-  // fields). A live running job must never be touched here: reconcile()
-  // owns liveness decisions.
-  let changed = false;
-  for (const job of jobs) {
-    const legacy = !Array.isArray(job.attempts) || !job.expiresAt;
-    if (!legacy) continue;
-    if (!Array.isArray(job.attempts)) job.attempts = [];
-    if (!job.expiresAt) {
-      job.expiresAt = new Date(Date.parse(job.createdAt) + JOB_TTL_MS).toISOString();
-    }
-    if ((job.status as string) === 'running') {
-      job.status = 'authorized';
-      job.deviceId = undefined;
-    }
-    changed = true;
-  }
-  if (changed) writeJson('jobs.json', jobs);
-  return jobs;
-}
 
 function str(value: unknown, max: number, name: string): string {
   if (typeof value !== 'string' || !value.trim() || value.length > max) {
@@ -624,28 +560,6 @@ function validateJobInput(kind: JobKind, params: Record<string, unknown>, policy
   return {};
 }
 
-function loadApprovals(): AgentApproval[] {
-  return readJson<AgentApproval[]>('agent-approvals.json', []);
-}
-
-export interface AgentApproval {
-  id: string;
-  title: string;
-  kind: JobKind;
-  params: Record<string, unknown>;
-  reason: string;
-  goalId?: string;
-  idempotencyKey?: string;
-  status: 'pending' | 'approved' | 'rejected' | 'expired';
-  createdBy: string;
-  createdAt: string;
-  expiresAt: string;
-  decidedAt?: string;
-  note?: string;
-  // An approval authorizes exactly one job. Replays are refused.
-  jobIds: string[];
-}
-
 function sameParams(a: unknown, b: unknown): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
 }
@@ -659,10 +573,6 @@ function normalizeJobParams(kind: JobKind, params: Record<string, unknown>): Rec
   return params;
 }
 
-function loadIdempotency(): Record<string, { jobId?: string; approvalId?: string; createdAt: string }> {
-  return readJson('idem.json', {});
-}
-
 function trimParamsForDenial(kind: JobKind, params: Record<string, unknown>): Record<string, unknown> {
   const copy: Record<string, unknown> = { ...scrubSecretParams(kind, params) };
   if (typeof copy.content === 'string') copy.content = `[withheld ${copy.content.length} chars]`;
@@ -670,8 +580,8 @@ function trimParamsForDenial(kind: JobKind, params: Record<string, unknown>): Re
   return copy;
 }
 
-function persistDeniedJob(kind: JobKind, params: Record<string, unknown>, capability: string, risk: string, reason: string): JobRecord {
-  const jobs = loadJobs();
+async function persistDeniedJob(kind: JobKind, params: Record<string, unknown>, capability: string, risk: string, reason: string): Promise<JobRecord> {
+  const store = await getStore();
   const job: JobRecord = {
     id: `job-${randomUUID()}`,
     kind,
@@ -683,9 +593,8 @@ function persistDeniedJob(kind: JobKind, params: Record<string, unknown>, capabi
     status: 'denied',
     attempts: [],
   };
-  jobs.push(job);
-  writeJson('jobs.json', jobs);
-  appendAudit({
+  await store.insertJob(job);
+  await appendAudit({
     agent: 'Amey', machine: 'WAVES ONE', userAuth: 'standing policy',
     action: 'job.denied', target: job.id,
     command: kind === 'term.exec' && typeof params.command === 'string'
@@ -695,12 +604,20 @@ function persistDeniedJob(kind: JobKind, params: Record<string, unknown>, capabi
   return job;
 }
 
-export function enqueueJob(input: {
+function validateIdempotencyKey(value: unknown): string | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== 'string' || !value.trim() || value.length > 128) {
+    throw bad('Invalid idempotency key.');
+  }
+  return value;
+}
+
+export async function enqueueJob(input: {
   kind: JobKind; params: Record<string, unknown>; approvalId?: string;
   goalId?: string; idempotencyKey?: string;
-}): { job: JobRecord; deduped: boolean } {
+}): Promise<{ job: JobRecord; deduped: boolean }> {
   const { kind } = input;
-  const policy = getPolicy();
+  const policy = await getPolicy();
   const params = normalizeJobParams(kind, (input.params || {}) as Record<string, unknown>);
   // Validation-time refusals (denied commands, domain blocks) persist as
   // terminal denied records. Malformed payloads (400) do not: their shape
@@ -720,7 +637,7 @@ export function enqueueJob(input: {
         // Classification is best-effort here; the refusal stands regardless.
       }
       const cap = effectiveCapability(kind, classified);
-      const denied = persistDeniedJob(kind, params, cap, jobRisk(kind, classified), error.message);
+      const denied = await persistDeniedJob(kind, params, cap, jobRisk(kind, classified), error.message);
       throw forbidden(error.message, { jobId: denied.id });
     }
     throw error;
@@ -733,128 +650,145 @@ export function enqueueJob(input: {
     const reason = policyValue === 'denied'
       ? `${capability} is denied by the execution policy.`
       : 'Visible browser sessions require an approval.';
-    const denied = persistDeniedJob(kind, params, capability, risk, reason);
+    const denied = await persistDeniedJob(kind, params, capability, risk, reason);
     throw forbidden(reason, { jobId: denied.id });
   }
   const needsApproval = policyValue === 'approval' || risk !== 'low' || headed;
-  if (input.idempotencyKey) {
-    if (typeof input.idempotencyKey !== 'string' || !input.idempotencyKey.trim() || input.idempotencyKey.length > 128) {
-      throw bad('Invalid idempotency key.');
-    }
-    const idem = loadIdempotency();
-    const hit = idem[`job:${input.idempotencyKey}`];
-    if (hit) {
-      const existing = loadJobs().find(j => j.id === hit.jobId);
-      if (existing) return { job: existing, deduped: true };
-    }
-  }
-  let approval: AgentApproval | undefined;
-  if (input.approvalId) {
-    const approvals = loadApprovals();
-    approval = approvals.find(a => a.id === input.approvalId);
-    if (!approval || approval.status !== 'approved') {
-      throw forbidden('Approval is not approved for this job.', { needsApproval: true });
-    }
-    if (approval.kind !== kind || !sameParams(approval.params, params)) {
-      throw forbidden('Approval does not match this exact job. Approvals bind to one job only.', { needsApproval: true });
-    }
-    if ((approval.jobIds || []).length > 0) {
-      throw forbidden('Approval has already authorized a job. Request a fresh approval.', { needsApproval: true });
-    }
-  } else if (needsApproval) {
-    throw forbidden('This action requires CEO approval first.', { needsApproval: true, capability, risk });
-  }
-  const jobs = loadJobs();
-  // Jobs created during a stop/pause wait in held state instead of becoming
-  // releasable. Resume promotes them; nothing is lost or silently run.
-  const held = flags().stopped || flags().paused;
-  const nowIso = new Date().toISOString();
-  const job: JobRecord = {
-    id: `job-${randomUUID()}`,
-    kind, params, capability, risk,
-    approvalId: approval?.id,
-    goalId: input.goalId,
-    idempotencyKey: input.idempotencyKey,
-    requestedBy: 'Amey',
-    createdAt: nowIso,
-    expiresAt: new Date(Date.now() + JOB_TTL_MS).toISOString(),
-    status: held ? 'queued' : 'authorized',
-    authorizedAt: held ? undefined : nowIso,
-    attempts: [],
-  };
-  jobs.push(job);
-  writeJson('jobs.json', jobs);
-  if (approval) {
-    const approvals = loadApprovals();
-    const stored = approvals.find(a => a.id === approval.id);
-    if (stored) {
-      stored.jobIds.push(job.id);
-      writeJson('agent-approvals.json', approvals);
-    }
-  }
-  if (input.idempotencyKey) {
-    const idem = loadIdempotency();
-    idem[`job:${input.idempotencyKey}`] = { jobId: job.id, createdAt: new Date().toISOString() };
-    writeJson('idem.json', idem);
-  }
-  appendAudit({
-    agent: 'Amey', machine: 'WAVES ONE', userAuth: approval ? `approval:${approval.id}` : 'standing policy',
-    action: held ? 'job.queued' : 'job.authorized', target: job.id,
-    command: kind === 'term.exec' ? redactSecrets(String(params.command)).slice(0, 500) : undefined,
-    permission: capability, approvalId: approval?.id,
-    result: held
-      ? `${kind} held in queue during stop/pause. Resumes on release.`
-      : `${kind} authorized (${risk} risk).`,
-  });
-  return { job, deduped: false };
-}
+  const idempotencyKey = validateIdempotencyKey(input.idempotencyKey);
+  const store = await getStore();
 
-export interface PublicJob extends Omit<JobRecord, 'params'> {
-  params: Record<string, unknown>;
+  // Fast dedupe path (read-only): a completed earlier request with the same
+  // key returns its job without touching state.
+  if (idempotencyKey) {
+    const hit = await store.idemGet(`job:${idempotencyKey}`);
+    if (hit?.jobId) {
+      const existing = await store.findJob(hit.jobId);
+      if (existing) return { job: normalizeLegacy(existing), deduped: true };
+    }
+  }
+
+  try {
+    return await store.runInTransaction(async tx => {
+      let approval: AgentApproval | undefined;
+      if (input.approvalId) {
+        // Row lock: concurrent binds of the same approval serialize here.
+        approval = (await tx.getApprovalForUpdate(input.approvalId!)) ?? undefined;
+        if (!approval || approval.status !== 'approved') {
+          throw forbidden('Approval is not approved for this job.', { needsApproval: true });
+        }
+        if (approval.kind !== kind || !sameParams(approval.params, params)) {
+          throw forbidden('Approval does not match this exact job. Approvals bind to one job only.', { needsApproval: true });
+        }
+        if ((approval.jobIds || []).length > 0) {
+          throw forbidden('Approval has already authorized a job. Request a fresh approval.', { needsApproval: true });
+        }
+      } else if (needsApproval) {
+        throw forbidden('This action requires CEO approval first.', { needsApproval: true, capability, risk });
+      }
+      // Jobs created during a stop/pause wait in held state instead of becoming
+      // releasable. Resume promotes them; nothing is lost or silently run.
+      const flags = await tx.readFlags();
+      const held = flags.stopped || flags.paused;
+      const nowIso = new Date().toISOString();
+      const job: JobRecord = {
+        id: `job-${randomUUID()}`,
+        kind, params, capability, risk,
+        ...(approval ? { approvalId: approval.id } : {}),
+        ...(input.goalId ? { goalId: input.goalId } : {}),
+        ...(idempotencyKey ? { idempotencyKey } : {}),
+        requestedBy: 'Amey',
+        createdAt: nowIso,
+        expiresAt: new Date(Date.now() + JOB_TTL_MS).toISOString(),
+        status: held ? 'queued' : 'authorized',
+        ...(held ? {} : { authorizedAt: nowIso }),
+        attempts: [],
+      };
+      // Claim the idempotency slot FIRST: a concurrent duplicate blocks on
+      // this row and then fails, so it falls back to the winner below.
+      if (idempotencyKey) {
+        await tx.idemSet(`job:${idempotencyKey}`, { jobId: job.id });
+      }
+      // The partial unique index jobs_approval_single_use_idx is the final
+      // backstop: even a missed lock surfaces as StoreConflict, never a
+      // double-bound approval.
+      await tx.insertJob(job);
+      if (approval) {
+        await tx.saveApproval({ ...approval, jobIds: [...approval.jobIds, job.id] });
+      }
+      await tx.auditAppend({
+        ts: new Date().toISOString(),
+        agent: 'Amey', machine: 'WAVES ONE', userAuth: approval ? `approval:${approval.id}` : 'standing policy',
+        action: held ? 'job.queued' : 'job.authorized', target: job.id,
+        command: kind === 'term.exec' ? redactSecrets(String(params.command)).slice(0, 500) : undefined,
+        permission: capability, ...(approval ? { approvalId: approval.id } : {}),
+        result: held
+          ? `${kind} held in queue during stop/pause. Resumes on release.`
+          : `${kind} authorized (${risk} risk).`,
+      });
+      return { job, deduped: false };
+    });
+  } catch (error) {
+    // A lost race is not an error to surface raw: resolve the winner.
+    if (error instanceof StoreConflict) {
+      if (idempotencyKey) {
+        const hit = await store.idemGet(`job:${idempotencyKey}`);
+        if (hit?.jobId) {
+          const winner = await store.findJob(hit.jobId);
+          if (winner) return { job: normalizeLegacy(winner), deduped: true };
+        }
+      }
+      if (input.approvalId) {
+        throw forbidden('Approval has already authorized a job. Request a fresh approval.', { needsApproval: true });
+      }
+      throw conflict('Concurrent request conflict. Retry with the same idempotency key.');
+    }
+    throw error;
+  }
 }
 
 function publicJob(job: JobRecord): PublicJob {
   return { ...job, params: scrubSecretParams(job.kind, job.params) };
 }
 
-export function listJobs(limit = 20): PublicJob[] {
-  reconcile();
-  return loadJobs().slice(-Math.max(1, Math.min(100, limit))).reverse().map(publicJob);
+export async function listJobs(limit = 20): Promise<PublicJob[]> {
+  await reconcile();
+  const store = await getStore();
+  const jobs = await store.listRecentJobs(Math.max(1, Math.min(100, limit)));
+  return jobs.map(j => publicJob(normalizeLegacy(j)));
 }
 
-export function getJob(id: string): PublicJob {
-  const job = loadJobs().find(j => j.id === id);
+export async function getJob(id: string): Promise<PublicJob> {
+  const store = await getStore();
+  const job = await store.findJob(id);
   if (!job) throw notFound('Job not found.');
-  return publicJob(job);
+  return publicJob(normalizeLegacy(job));
 }
 
-interface ControlFlags {
-  stopped: boolean;
-  paused: boolean;
-}
-
-function flags(): ControlFlags {
-  const state = readJson<ControlFlags>('control.json', { stopped: false, paused: false });
-  return { stopped: !!state.stopped, paused: !!state.paused };
+async function flags(): Promise<ControlFlags> {
+  const store = await getStore();
+  return store.readFlags();
 }
 
 // Expiry sweep + orphaned-running recovery. Jobs never vanish silently:
 // expiry and requeue are audited. Reconnect is safe: a job returns to
-// authorized (never duplicated) with an attempts cap.
-export function reconcile(): void {
-  const jobs = loadJobs();
-  const devices = loadDevices();
-  let changed = false;
+// authorized (never duplicated) with an attempts cap. Every mutation is a
+// conditional write, so concurrent reconcilers (or a dispatcher racing the
+// sweep) cannot double-apply or clobber.
+export async function reconcile(): Promise<void> {
+  const store = await getStore();
+  const jobs = (await store.listActiveJobs()).map(normalizeLegacy);
+  const devices = await store.listDevices();
   const now = Date.now();
   for (const job of jobs) {
     if (['queued', 'authorized', 'dispatched', 'running'].includes(job.status) && Date.parse(job.expiresAt) < now) {
-      job.status = 'expired';
-      changed = true;
-      appendAudit({
-        agent: 'Control plane', machine: 'control-plane', userAuth: 'request expiration',
-        action: 'job.expired', target: job.id, permission: job.capability,
-        result: `${job.kind} expired before completion.`,
-      });
+      const expired: JobRecord = { ...job, status: 'expired' };
+      if (await store.updateJobIf(expired, ['queued', 'authorized', 'dispatched', 'running'])) {
+        await appendAudit({
+          agent: 'Control plane', machine: 'control-plane', userAuth: 'request expiration',
+          action: 'job.expired', target: job.id, permission: job.capability,
+          result: `${job.kind} expired before completion.`,
+        });
+      }
       continue;
     }
     if ((job.status === 'running' || job.status === 'dispatched') && job.deviceId) {
@@ -871,185 +805,218 @@ export function reconcile(): void {
         idleFor = Math.min(heartbeatAge, attemptAge);
       }
       if (idleFor > STALE_RUNNING_MS) {
-        const last = job.attempts[job.attempts.length - 1];
+        const attempts = job.attempts.map(a => ({ ...a }));
+        const last = attempts[attempts.length - 1];
         if (last && !last.endedAt) {
           last.endedAt = new Date().toISOString();
           last.outcome = 'orphaned';
         }
-        if (job.attempts.length >= MAX_DISPATCHES) {
-          job.status = 'failed';
-          appendAudit({
-            agent: 'Control plane', machine: 'control-plane', userAuth: 'reconnect safety',
-            action: 'job.failed', target: job.id, permission: job.capability,
-            result: `${job.kind} failed after ${job.attempts.length} orphaned attempts.`,
-            error: 'Agent disconnected repeatedly.',
-          });
+        if (attempts.length >= MAX_DISPATCHES) {
+          const failed: JobRecord = { ...job, attempts, status: 'failed' };
+          if (await store.updateJobIf(failed, ['running', 'dispatched'])) {
+            await store.finishAttempt(job.id, 'orphaned');
+            await appendAudit({
+              agent: 'Control plane', machine: 'control-plane', userAuth: 'reconnect safety',
+              action: 'job.failed', target: job.id, permission: job.capability,
+              result: `${job.kind} failed after ${attempts.length} orphaned attempts.`,
+              error: 'Agent disconnected repeatedly.',
+            });
+          }
         } else {
-          job.status = 'authorized';
-          job.deviceId = undefined;
-          appendAudit({
-            agent: 'Control plane', machine: 'control-plane', userAuth: 'reconnect safety',
-            action: 'job.requeued', target: job.id, permission: job.capability,
-            result: `Agent ${!device ? 'gone' : 'stale'}; ${job.kind} returned to authorized without duplicating work.`,
-          });
+          const requeued: JobRecord = { ...job, attempts, status: 'authorized', deviceId: undefined };
+          if (await store.updateJobIf(requeued, ['running', 'dispatched'])) {
+            await store.finishAttempt(job.id, 'orphaned');
+            await appendAudit({
+              agent: 'Control plane', machine: 'control-plane', userAuth: 'reconnect safety',
+              action: 'job.requeued', target: job.id, permission: job.capability,
+              result: `Agent ${!device ? 'gone' : 'stale'}; ${job.kind} returned to authorized without duplicating work.`,
+            });
+          }
         }
-        changed = true;
       }
     }
   }
-  if (changed) writeJson('jobs.json', jobs);
-  const approvals = loadApprovals();
-  let approvalsChanged = false;
+  const approvals = await store.listApprovalsAll();
   for (const approval of approvals) {
     if (approval.status === 'pending' && Date.parse(approval.expiresAt) < now) {
-      approval.status = 'expired';
-      approvalsChanged = true;
+      await store.updateApprovalIf({ ...approval, status: 'expired' }, 'pending');
     }
   }
-  if (approvalsChanged) writeJson('agent-approvals.json', approvals);
 }
 
-export function nextJob(deviceId: string): {
+export async function nextJob(deviceId: string): Promise<{
   job: { id: string; kind: JobKind; params: Record<string, unknown>; approvalId?: string; goalId?: string } | null;
   policy: Policy;
   stopped: boolean;
   paused: boolean;
-} {
-  reconcile();
-  const { stopped, paused } = flags();
-  const policy = getPolicy();
+}> {
+  await reconcile();
+  const { stopped, paused } = await flags();
+  const policy = await getPolicy();
   if (stopped || paused) return { job: null, policy, stopped, paused };
-  const jobs = loadJobs();
-  let dispatch: JobRecord | undefined;
-  for (const job of jobs) {
-    if (job.status !== 'authorized') continue;
-    if (job.cancelRequested) {
-      job.status = 'cancelled';
-      appendAudit({
-        agent: 'Control plane', machine: 'control-plane', userAuth: 'CEO cancellation',
-        action: 'job.cancelled', target: job.id, permission: job.capability,
-        result: `${job.kind} cancelled before dispatch.`,
-      });
+  const store = await getStore();
+  const candidates = (await store.listActiveJobs())
+    .map(normalizeLegacy)
+    .filter(j => j.status === 'authorized');
+  for (const candidate of candidates) {
+    if (candidate.cancelRequested) {
+      if (await store.updateJobIf({ ...candidate, status: 'cancelled' }, ['authorized'])) {
+        await appendAudit({
+          agent: 'Control plane', machine: 'control-plane', userAuth: 'CEO cancellation',
+          action: 'job.cancelled', target: candidate.id, permission: candidate.capability,
+          result: `${candidate.kind} cancelled before dispatch.`,
+        });
+      }
       continue;
     }
-    if (job.attempts.length >= MAX_DISPATCHES) {
-      job.status = 'failed';
-      appendAudit({
-        agent: 'Control plane', machine: 'control-plane', userAuth: 'reconnect safety',
-        action: 'job.failed', target: job.id, permission: job.capability,
-        result: `${job.kind} exceeded the dispatch budget.`,
-      });
+    if (candidate.attempts.length >= MAX_DISPATCHES) {
+      if (await store.updateJobIf({ ...candidate, status: 'failed' }, ['authorized'])) {
+        await appendAudit({
+          agent: 'Control plane', machine: 'control-plane', userAuth: 'reconnect safety',
+          action: 'job.failed', target: candidate.id, permission: candidate.capability,
+          result: `${candidate.kind} exceeded the dispatch budget.`,
+        });
+      }
       continue;
     }
-    job.status = 'dispatched';
-    job.deviceId = deviceId;
-    job.attempts.push({ deviceId, startedAt: new Date().toISOString() });
-    dispatch = job;
-    break;
-  }
-  writeJson('jobs.json', jobs);
-  if (dispatch) {
-    const devices = loadDevices();
-    const device = devices.find(d => d.deviceId === deviceId);
+    // Atomic claim: exactly one dispatcher wins the authorized -> dispatched
+    // transition; losers continue scanning instead of double-dispatching.
+    const claimed: JobRecord = { ...candidate, status: 'dispatched', deviceId };
+    if (!(await store.updateJobIf(claimed, ['authorized']))) continue;
+    await store.appendAttempt(candidate.id, { deviceId, startedAt: new Date().toISOString() });
+    const device = await store.getDevice(deviceId);
     if (device) {
-      device.currentJobId = dispatch.id;
-      device.status = 'running';
-      writeJson('devices.json', devices);
+      await store.saveDevice({ ...device, currentJobId: candidate.id, status: 'running' });
     }
-    appendAudit({
-      agent: 'Control plane', machine: 'control-plane', userAuth: dispatch.approvalId ? `approval:${dispatch.approvalId}` : 'standing policy',
-      action: 'job.dispatched', target: dispatch.id, permission: dispatch.capability,
-      approvalId: dispatch.approvalId,
-      result: `${dispatch.kind} dispatched to ${deviceId} (attempt ${dispatch.attempts.length}).`,
+    await appendAudit({
+      agent: 'Control plane', machine: 'control-plane', userAuth: candidate.approvalId ? `approval:${candidate.approvalId}` : 'standing policy',
+      action: 'job.dispatched', target: candidate.id, permission: candidate.capability,
+      ...(candidate.approvalId ? { approvalId: candidate.approvalId } : {}),
+      result: `${candidate.kind} dispatched to ${deviceId} (attempt ${candidate.attempts.length + 1}).`,
     });
+    return {
+      job: {
+        // Full params go ONLY to the authenticated agent. List endpoints scrub.
+        id: candidate.id, kind: candidate.kind, params: candidate.params,
+        ...(candidate.approvalId ? { approvalId: candidate.approvalId } : {}),
+        ...(candidate.goalId ? { goalId: candidate.goalId } : {}),
+      },
+      policy, stopped, paused,
+    };
   }
-  return {
-    job: dispatch ? {
-      // Full params go ONLY to the authenticated agent. List endpoints scrub.
-      id: dispatch.id, kind: dispatch.kind, params: dispatch.params,
-      approvalId: dispatch.approvalId, goalId: dispatch.goalId,
-    } : null,
-    policy, stopped, paused,
-  };
+  return { job: null, policy, stopped, paused };
 }
 
-export function agentFlags(deviceId: string): { stop: boolean; paused: boolean; cancelCurrent: boolean } {
-  const { stopped, paused } = flags();
-  const jobs = loadJobs();
+export async function agentFlags(deviceId: string): Promise<{ stop: boolean; paused: boolean; cancelCurrent: boolean }> {
+  const { stopped, paused } = await flags();
+  const store = await getStore();
+  const jobs = await store.listActiveJobs();
   const running = jobs.find(j => j.deviceId === deviceId && (j.status === 'running' || j.status === 'dispatched'));
   return { stop: stopped, paused, cancelCurrent: stopped || !!running?.cancelRequested };
 }
 
-export function completeJob(deviceId: string, input: {
+export async function completeJob(deviceId: string, input: {
   jobId: string; ok: boolean; output?: string; error?: string; stderr?: string;
   before?: unknown; after?: unknown; exitCode?: number; durationMs?: number;
   outcome?: 'stopped' | 'cancelled';
-}): { ok: true } {
-  const jobs = loadJobs();
-  const job = jobs.find(j => j.id === input.jobId);
-  if (!job) throw notFound('Job not found.');
+}): Promise<{ ok: true }> {
+  const store = await getStore();
+  const current = await store.findJob(input.jobId);
+  if (!current) throw notFound('Job not found.');
+  const job = normalizeLegacy(current);
   if (job.deviceId && job.deviceId !== deviceId) throw forbidden('Job is owned by another device.');
-  if (!['running', 'dispatched'].includes(job.status)) {
+  const terminal = !['running', 'dispatched'].includes(job.status);
+  const buildResult = (): JobResult => {
+    const output = typeof input.output === 'string'
+      ? redactSecrets(input.output).slice(0, MAX_OUTPUT_CHARS) : undefined;
+    const stderr = typeof input.stderr === 'string'
+      ? redactSecrets(input.stderr).slice(0, MAX_OUTPUT_CHARS) : undefined;
+    return {
+      ok: !!input.ok,
+      ...(output !== undefined ? { output } : {}),
+      ...(typeof input.error === 'string' ? { error: redactSecrets(input.error).slice(0, 5000) } : {}),
+      ...(stderr !== undefined ? { stderr } : {}),
+      ...(input.before !== undefined ? { before: input.before } : {}),
+      ...(input.after !== undefined ? { after: input.after } : {}),
+      ...(input.exitCode !== undefined ? { exitCode: input.exitCode } : {}),
+      ...(input.durationMs !== undefined ? { durationMs: input.durationMs } : {}),
+      ...(input.outcome !== undefined ? { outcome: input.outcome } : {}),
+    };
+  };
+  if (terminal) {
     // Idempotent completion: an identical duplicate post is accepted, a
     // conflicting one is rejected so reconnects can't rewrite history.
-    if (job.result && sameParams(job.result, {
-      ok: input.ok, output: input.output, error: input.error, stderr: input.stderr,
-      before: input.before, after: input.after, exitCode: input.exitCode,
-      durationMs: input.durationMs, outcome: input.outcome,
-    })) {
+    if (job.result && sameParams(job.result, buildResult())) {
       return { ok: true };
     }
     throw conflict(`Job is already ${job.status}.`);
   }
-  const output = typeof input.output === 'string'
-    ? redactSecrets(input.output).slice(0, MAX_OUTPUT_CHARS) : undefined;
-  const stderr = typeof input.stderr === 'string'
-    ? redactSecrets(input.stderr).slice(0, MAX_OUTPUT_CHARS) : undefined;
-  const result: JobResult = {
-    ok: !!input.ok,
-    output,
-    error: typeof input.error === 'string' ? redactSecrets(input.error).slice(0, 5000) : undefined,
-    stderr,
-    before: input.before, after: input.after,
-    exitCode: input.exitCode, durationMs: input.durationMs,
-    outcome: input.outcome,
-  };
-  // VERIFYING: server-side result validation before anything is terminal.
-  job.status = 'verifying';
-  const verified = verifyResult(job, result);
-  if (input.outcome === 'stopped') job.status = 'stopped';
-  else if (input.outcome === 'cancelled' || job.cancelRequested) job.status = 'cancelled';
-  else job.status = verified && input.ok ? 'completed' : 'failed';
-  job.result = result;
-  // Secrets never rest in the store: scrub dispatch-time params on completion.
-  job.params = scrubSecretParams(job.kind, job.params);
-  const last = job.attempts[job.attempts.length - 1];
-  if (last && !last.endedAt) {
-    last.endedAt = new Date().toISOString();
-    last.outcome = job.status;
+  // Transition + attempt close + device release + audit commit atomically.
+  // The row lock serializes concurrent completions; the loser re-reads the
+  // terminal row and takes the idempotent/conflict path above.
+  try {
+    await store.runInTransaction(async tx => {
+      const locked = await tx.getJobForUpdate(input.jobId);
+      if (!locked) throw notFound('Job not found.');
+      const fresh = normalizeLegacy(locked);
+      if (fresh.deviceId && fresh.deviceId !== deviceId) throw forbidden('Job is owned by another device.');
+      if (!['running', 'dispatched'].includes(fresh.status)) {
+        throw new StoreConflict(`Job is already ${fresh.status}.`);
+      }
+      const result = buildResult();
+      // VERIFYING: server-side result validation before anything is terminal.
+      const verified = verifyResult(fresh, result);
+      let status: JobStatus;
+      if (input.outcome === 'stopped') status = 'stopped';
+      else if (input.outcome === 'cancelled' || fresh.cancelRequested) status = 'cancelled';
+      else status = verified && input.ok ? 'completed' : 'failed';
+      const attempts = fresh.attempts.map(a => ({ ...a }));
+      const last = attempts[attempts.length - 1];
+      if (last && !last.endedAt) {
+        last.endedAt = new Date().toISOString();
+        last.outcome = status;
+      }
+      // Secrets never rest in the store: scrub dispatch-time params on completion.
+      const completed: JobRecord = {
+        ...fresh,
+        status,
+        result,
+        params: scrubSecretParams(fresh.kind, fresh.params) as Record<string, unknown>,
+        attempts,
+      };
+      await tx.saveJob(completed);
+      await tx.finishAttempt(fresh.id, status);
+      const device = await tx.getDevice(deviceId);
+      if (device) {
+        await tx.saveDevice({ ...device, currentJobId: null, status: 'idle' });
+      }
+      await tx.auditAppend({
+        ts: new Date().toISOString(),
+        agent: 'WAVES Computer Agent', machine: device?.machine || 'workstation',
+        userAuth: fresh.approvalId ? `approval:${fresh.approvalId}` : 'standing policy',
+        action: `job.${status}`, target: fresh.id,
+        command: fresh.kind === 'term.exec'
+          ? redactSecrets(String((completed.params as { command?: unknown }).command || '')).slice(0, 500) || undefined
+          : undefined,
+        permission: fresh.capability, ...(fresh.approvalId ? { approvalId: fresh.approvalId } : {}),
+        result: result.output?.slice(-2000) || (input.ok ? `${fresh.kind} completed.` : `${fresh.kind} failed.`),
+        ...(result.error ? { error: result.error } : {}),
+        ...(result.before !== undefined ? { before: result.before } : {}),
+        ...(result.after !== undefined ? { after: result.after } : {}),
+      });
+    });
+    return { ok: true };
+  } catch (error) {
+    if (error instanceof StoreConflict) {
+      // Lost a completion race: the winner's terminal row decides.
+      const winner = await store.findJob(input.jobId);
+      if (winner && !['running', 'dispatched'].includes(winner.status)) {
+        if (winner.result && sameParams(winner.result, buildResult())) return { ok: true };
+        throw conflict(`Job is already ${winner.status}.`);
+      }
+    }
+    throw error;
   }
-  writeJson('jobs.json', jobs);
-  const devices = loadDevices();
-  const device = devices.find(d => d.deviceId === deviceId);
-  if (device) {
-    device.currentJobId = null;
-    device.status = 'idle';
-    writeJson('devices.json', devices);
-  }
-  appendAudit({
-    agent: 'WAVES Computer Agent', machine: device?.machine || 'workstation',
-    userAuth: job.approvalId ? `approval:${job.approvalId}` : 'standing policy',
-    action: `job.${job.status}`, target: job.id,
-    command: job.kind === 'term.exec'
-      ? redactSecrets(String((job.params as { command?: unknown }).command || '')).slice(0, 500) || undefined
-      : undefined,
-    permission: job.capability, approvalId: job.approvalId,
-    result: output?.slice(-2000) || (input.ok ? `${job.kind} completed.` : `${job.kind} failed.`),
-    error: job.result.error,
-    before: job.result.before, after: job.result.after,
-  });
-  void verified;
-  return { ok: true };
 }
 
 // Result integrity gate: caps, redaction, and mutation evidence. Returns true
@@ -1061,15 +1028,15 @@ function verifyResult(job: JobRecord, result: JobResult): boolean {
   return true;
 }
 
-export function pushEvents(deviceId: string, events: Array<{ level: string; message: string; jobId?: string }>): { ok: true } {
+export async function pushEvents(deviceId: string, events: Array<{ level: string; message: string; jobId?: string }>): Promise<{ ok: true }> {
   if (!Array.isArray(events) || events.length > 50) throw bad('Invalid events batch.');
-  const devices = loadDevices();
-  const device = devices.find(d => d.deviceId === deviceId);
+  const store = await getStore();
+  const device = await store.getDevice(deviceId);
   for (const event of events) {
     if (!['info', 'warning', 'error'].includes(event.level) || typeof event.message !== 'string') {
       throw bad('Invalid event.');
     }
-    appendAudit({
+    await appendAudit({
       agent: 'WAVES Computer Agent', machine: device?.machine || 'workstation',
       userAuth: 'job execution', action: 'job.log', target: event.jobId || deviceId,
       permission: 'terminal.execute', result: redactSecrets(event.message).slice(0, 2000),
@@ -1078,30 +1045,34 @@ export function pushEvents(deviceId: string, events: Array<{ level: string; mess
   return { ok: true };
 }
 
-export function cancelJob(jobId: string): { ok: true; status: string } {
-  reconcile();
-  const jobs = loadJobs();
-  const job = jobs.find(j => j.id === jobId);
-  if (!job) throw notFound('Job not found.');
+export async function cancelJob(jobId: string): Promise<{ ok: true; status: string }> {
+  await reconcile();
+  const store = await getStore();
+  const found = await store.findJob(jobId);
+  if (!found) throw notFound('Job not found.');
+  const job = normalizeLegacy(found);
   if (job.status === 'queued' || job.status === 'authorized') {
-    job.status = 'cancelled';
-    writeJson('jobs.json', jobs);
-    appendAudit({
-      agent: 'Amey', machine: 'WAVES ONE', userAuth: 'CEO cancellation',
-      action: 'job.cancelled', target: job.id, permission: job.capability,
-      result: `${job.kind} cancelled before dispatch.`,
-    });
-    return { ok: true, status: 'cancelled' };
+    if (await store.updateJobIf({ ...job, status: 'cancelled' }, ['queued', 'authorized'])) {
+      await appendAudit({
+        agent: 'Amey', machine: 'WAVES ONE', userAuth: 'CEO cancellation',
+        action: 'job.cancelled', target: job.id, permission: job.capability,
+        result: `${job.kind} cancelled before dispatch.`,
+      });
+      return { ok: true, status: 'cancelled' };
+    }
+    const fresh = await store.findJob(jobId);
+    return { ok: true, status: fresh?.status || job.status };
   }
   if (job.status === 'running' || job.status === 'dispatched') {
-    job.cancelRequested = true;
-    writeJson('jobs.json', jobs);
-    appendAudit({
-      agent: 'Amey', machine: 'WAVES ONE', userAuth: 'CEO cancellation',
-      action: 'job.cancel_requested', target: job.id, permission: job.capability,
-      result: 'Cancellation requested. The agent stops the running action.',
-    });
-    return { ok: true, status: job.status };
+    if (await store.updateJobIf({ ...job, cancelRequested: true }, ['running', 'dispatched'])) {
+      await appendAudit({
+        agent: 'Amey', machine: 'WAVES ONE', userAuth: 'CEO cancellation',
+        action: 'job.cancel_requested', target: job.id, permission: job.capability,
+        result: 'Cancellation requested. The agent stops the running action.',
+      });
+    }
+    const fresh = await store.findJob(jobId);
+    return { ok: true, status: fresh?.status || job.status };
   }
   return { ok: true, status: job.status };
 }
@@ -1110,133 +1081,207 @@ export function cancelJob(jobId: string): { ok: true; status: string } {
 // Agent approvals (server-side; bind exactly one approved job)
 // ---------------------------------------------------------------------------
 
-export function createApproval(input: {
+export async function createApproval(input: {
   title: string; kind: JobKind; params: Record<string, unknown>; reason: string;
   goalId?: string; idempotencyKey?: string;
-}): AgentApproval {
+}): Promise<AgentApproval> {
   if (!input.title?.trim() || input.title.length > 200) throw bad('Invalid approval title.');
   if (!input.reason?.trim() || input.reason.length > 2000) throw bad('An approval needs a reason.');
-  const policy = getPolicy();
+  const policy = await getPolicy();
   const params = normalizeJobParams(input.kind, (input.params || {}) as Record<string, unknown>);
   validateJobInput(input.kind, params, policy);
-  if (input.idempotencyKey) {
-    if (typeof input.idempotencyKey !== 'string' || !input.idempotencyKey.trim() || input.idempotencyKey.length > 128) {
-      throw bad('Invalid idempotency key.');
-    }
-    const idem = loadIdempotency();
-    const hit = idem[`approval:${input.idempotencyKey}`];
+  const idempotencyKey = validateIdempotencyKey(input.idempotencyKey);
+  const store = await getStore();
+  if (idempotencyKey) {
+    const hit = await store.idemGet(`approval:${idempotencyKey}`);
     if (hit?.approvalId) {
-      const existing = loadApprovals().find(a => a.id === hit.approvalId);
+      const existing = await store.findApproval(hit.approvalId);
       if (existing) return existing;
     }
   }
-  const approvals = loadApprovals();
   const approval: AgentApproval = {
     id: `aa-${randomUUID()}`,
     title: input.title.trim(),
     kind: input.kind,
     params,
     reason: input.reason.trim(),
-    goalId: input.goalId,
-    idempotencyKey: input.idempotencyKey,
+    ...(input.goalId ? { goalId: input.goalId } : {}),
+    ...(idempotencyKey ? { idempotencyKey } : {}),
     status: 'pending',
     createdBy: 'Amey',
     createdAt: new Date().toISOString(),
     expiresAt: new Date(Date.now() + JOB_TTL_MS).toISOString(),
     jobIds: [],
   };
-  approvals.push(approval);
-  writeJson('agent-approvals.json', approvals);
-  if (input.idempotencyKey) {
-    const idem = loadIdempotency();
-    idem[`approval:${input.idempotencyKey}`] = { approvalId: approval.id, createdAt: new Date().toISOString() };
-    writeJson('idem.json', idem);
+  try {
+    await store.runInTransaction(async tx => {
+      if (idempotencyKey) {
+        await tx.idemSet(`approval:${idempotencyKey}`, { approvalId: approval.id });
+      }
+      await tx.insertApproval(approval);
+      await tx.auditAppend({
+        ts: new Date().toISOString(),
+        agent: 'Amey', machine: 'WAVES ONE', userAuth: 'CEO request',
+        action: 'approval.requested', target: approval.id, permission: effectiveCapability(input.kind),
+        result: `${approval.title} awaits decision.`,
+      });
+    });
+  } catch (error) {
+    if (error instanceof StoreConflict && idempotencyKey) {
+      const hit = await store.idemGet(`approval:${idempotencyKey}`);
+      if (hit?.approvalId) {
+        const winner = await store.findApproval(hit.approvalId);
+        if (winner) return winner;
+      }
+    }
+    throw error;
   }
-  appendAudit({
-    agent: 'Amey', machine: 'WAVES ONE', userAuth: 'CEO request',
-    action: 'approval.requested', target: approval.id, permission: effectiveCapability(input.kind),
-    result: `${approval.title} awaits decision.`,
-  });
   return approval;
 }
 
-export function listApprovals(): AgentApproval[] {
-  reconcile();
-  return loadApprovals().slice().reverse().map(a => ({ ...a, params: scrubSecretParams(a.kind, a.params) }));
+export async function listApprovals(): Promise<AgentApproval[]> {
+  await reconcile();
+  const store = await getStore();
+  return (await store.listApprovalsAll()).slice().reverse().map(a => ({ ...a, params: scrubSecretParams(a.kind, a.params) as Record<string, unknown> }));
 }
 
-function storedApproval(id: string): AgentApproval {
-  const approval = loadApprovals().find(a => a.id === id);
+async function storedApproval(id: string): Promise<AgentApproval> {
+  const store = await getStore();
+  const approval = await store.findApproval(id);
   if (!approval) throw notFound('Approval not found.');
   return approval;
 }
 
-export function decideApproval(id: string, decision: 'approved' | 'rejected', note?: string): { approval: AgentApproval; jobId?: string } {
-  reconcile();
-  const approvals = loadApprovals();
-  const approval = approvals.find(a => a.id === id);
-  if (!approval) throw notFound('Approval not found.');
-  if (approval.status === 'expired') throw gone('Approval expired. Request a fresh approval.');
-  if (approval.status !== 'pending') throw bad('Approval already decided.');
+export async function decideApproval(id: string, decision: 'approved' | 'rejected', note?: string): Promise<{ approval: AgentApproval; jobId?: string }> {
+  await reconcile();
   if (decision !== 'approved' && decision !== 'rejected') throw bad('Invalid decision.');
   if (decision === 'rejected' && !note?.trim()) throw bad('Rejection needs a reason.');
-  approval.status = decision;
-  approval.decidedAt = new Date().toISOString();
-  approval.note = note?.trim().slice(0, 1000);
-  // Persist before enqueueing: enqueueJob re-reads approvals from disk to
-  // verify the approval is approved and binds to the exact job.
-  writeJson('agent-approvals.json', approvals);
-  let jobId: string | undefined;
-  if (decision === 'approved') {
-    try {
-      const created = enqueueJob({ kind: approval.kind, params: approval.params, approvalId: approval.id, goalId: approval.goalId });
-      jobId = created.job.id;
-    } catch (error) {
-      approval.status = 'pending';
-      delete approval.decidedAt;
-      delete approval.note;
-      writeJson('agent-approvals.json', approvals);
-      throw error;
-    }
-    // enqueueJob recorded the authorized jobId on disk; reload so the
-    // returned record (and any later write) cannot clobber it.
-    const fresh = storedApproval(id);
-    appendAudit({
-      agent: 'Amey', machine: 'WAVES ONE', userAuth: 'CEO decision',
-      action: 'approval.approved', target: fresh.id, permission: effectiveCapability(fresh.kind),
-      approvalId: fresh.id,
-      result: `Approved. Job ${jobId} authorized.`,
+  const store = await getStore();
+  // The whole decision — approval state change, exact-match job
+  // authorization, single-use binding, and both audit events — commits
+  // atomically. Concurrent deciders serialize on the approval row lock;
+  // losers see a non-pending status and fail without side effects.
+  try {
+    return await store.runInTransaction(async tx => {
+      const approval = await tx.getApprovalForUpdate(id);
+      if (!approval) throw notFound('Approval not found.');
+      if (approval.status === 'expired' || (approval.status === 'pending' && Date.parse(approval.expiresAt) <= Date.now())) {
+        if (approval.status === 'pending') {
+          await tx.saveApproval({ ...approval, status: 'expired' });
+        }
+        throw gone('Approval expired. Request a fresh approval.');
+      }
+      if (approval.status !== 'pending') throw bad('Approval already decided.');
+      const decidedAt = new Date().toISOString();
+      if (decision === 'rejected') {
+        const rejected: AgentApproval = { ...approval, status: 'rejected', decidedAt, note: note!.trim().slice(0, 1000) };
+        await tx.saveApproval(rejected);
+        await tx.auditAppend({
+          ts: new Date().toISOString(),
+          agent: 'Amey', machine: 'WAVES ONE', userAuth: 'CEO decision',
+          action: 'approval.rejected', target: approval.id, permission: effectiveCapability(approval.kind),
+          approvalId: approval.id,
+          result: `Rejected: ${rejected.note}`,
+        });
+        return { approval: { ...rejected, params: scrubSecretParams(rejected.kind, rejected.params) as Record<string, unknown> } };
+      }
+      // Approved: authorize the exact bound job in the same transaction.
+      // Policy is re-read here so a policy change between request and
+      // decision cannot authorize a now-denied action.
+      const policy = await getPolicy();
+      let commandClass: 'readonly' | 'gated' | 'admin' | 'denied' | undefined;
+      try {
+        ({ commandClass } = validateJobInput(approval.kind, approval.params, policy));
+      } catch (error) {
+        if (error instanceof ApiError && error.status === 403) {
+          throw forbidden(error.message, { needsApproval: true });
+        }
+        throw error;
+      }
+      const capability = effectiveCapability(approval.kind, commandClass);
+      const risk = jobRisk(approval.kind, commandClass);
+      const policyValue = policy.capabilities[capability];
+      if (policyValue === 'denied') {
+        throw forbidden(`${capability} is denied by the execution policy.`, { needsApproval: true });
+      }
+      const flags = await tx.readFlags();
+      const held = flags.stopped || flags.paused;
+      const nowIso = new Date().toISOString();
+      const job: JobRecord = {
+        id: `job-${randomUUID()}`,
+        kind: approval.kind,
+        params: approval.params,
+        capability, risk,
+        approvalId: approval.id,
+        ...(approval.goalId ? { goalId: approval.goalId } : {}),
+        requestedBy: 'Amey',
+        createdAt: nowIso,
+        expiresAt: new Date(Date.now() + JOB_TTL_MS).toISOString(),
+        status: held ? 'queued' : 'authorized',
+        ...(held ? {} : { authorizedAt: nowIso }),
+        attempts: [],
+      };
+      await tx.insertJob(job);
+      const decided: AgentApproval = {
+        ...approval,
+        status: 'approved',
+        decidedAt,
+        ...(note?.trim() ? { note: note.trim().slice(0, 1000) } : {}),
+        jobIds: [...approval.jobIds, job.id],
+      };
+      await tx.saveApproval(decided);
+      await tx.auditAppend({
+        ts: new Date().toISOString(),
+        agent: 'Amey', machine: 'WAVES ONE', userAuth: `approval:${approval.id}`,
+        action: held ? 'job.queued' : 'job.authorized', target: job.id,
+        command: job.kind === 'term.exec' ? redactSecrets(String(approval.params.command)).slice(0, 500) : undefined,
+        permission: capability, approvalId: approval.id,
+        result: held
+          ? `${job.kind} held in queue during stop/pause. Resumes on release.`
+          : `${job.kind} authorized (${risk} risk).`,
+      });
+      await tx.auditAppend({
+        ts: new Date().toISOString(),
+        agent: 'Amey', machine: 'WAVES ONE', userAuth: 'CEO decision',
+        action: 'approval.approved', target: approval.id, permission: effectiveCapability(approval.kind),
+        approvalId: approval.id,
+        result: `Approved. Job ${job.id} authorized.`,
+      });
+      return {
+        approval: { ...decided, params: scrubSecretParams(decided.kind, decided.params) as Record<string, unknown> },
+        jobId: job.id,
+      };
     });
-    return { approval: { ...fresh, params: scrubSecretParams(fresh.kind, fresh.params) }, jobId };
+  } catch (error) {
+    if (error instanceof StoreConflict) {
+      // Lost a single-use race: whoever committed owns the binding.
+      const fresh = await storedApproval(id);
+      if (fresh.status !== 'pending') throw bad('Approval already decided.');
+      throw conflict('Concurrent decision conflict. Reload approvals and retry.');
+    }
+    throw error;
   }
-  writeJson('agent-approvals.json', approvals);
-  appendAudit({
-    agent: 'Amey', machine: 'WAVES ONE', userAuth: 'CEO decision',
-    action: 'approval.rejected', target: approval.id, permission: effectiveCapability(approval.kind),
-    approvalId: approval.id,
-    result: `Rejected: ${approval.note}`,
-  });
-  return { approval: { ...approval, params: scrubSecretParams(approval.kind, approval.params) }, jobId };
 }
 
 // ---------------------------------------------------------------------------
 // Emergency stop / resume
 // ---------------------------------------------------------------------------
 
-export function stopAll(cancelQueued: boolean): { stopped: true; cancelled: number } {
-  writeJson('control.json', { stopped: true, paused: true });
+export async function stopAll(cancelQueued: boolean): Promise<{ stopped: true; cancelled: number }> {
+  const store = await getStore();
+  await store.writeFlags({ stopped: true, paused: true });
   let cancelled = 0;
   if (cancelQueued) {
-    const jobs = loadJobs();
+    const jobs = (await store.listActiveJobs()).map(normalizeLegacy);
     for (const job of jobs) {
       if (job.status === 'queued' || job.status === 'authorized') {
-        job.status = 'cancelled';
-        cancelled += 1;
+        if (await store.updateJobIf({ ...job, status: 'cancelled' }, ['queued', 'authorized'])) {
+          cancelled += 1;
+        }
       }
     }
-    writeJson('jobs.json', jobs);
   }
-  appendAudit({
+  await appendAudit({
     agent: 'Amey', machine: 'WAVES ONE', userAuth: 'CEO emergency stop',
     action: 'agent.stopped', target: 'computer-agent', permission: 'system_configuration',
     result: `Emergency stop engaged. Running actions halted${cancelQueued ? `, ${cancelled} held job(s) cancelled` : ''}. New jobs queue in held state.`,
@@ -1244,20 +1289,21 @@ export function stopAll(cancelQueued: boolean): { stopped: true; cancelled: numb
   return { stopped: true, cancelled };
 }
 
-export function resume(): { stopped: false; released: number } {
-  writeJson('control.json', { stopped: false, paused: false });
+export async function resume(): Promise<{ stopped: false; released: number }> {
+  const store = await getStore();
+  await store.writeFlags({ stopped: false, paused: false });
   // Jobs held during the stop become releasable again.
-  const jobs = loadJobs();
+  const jobs = (await store.listActiveJobs()).map(normalizeLegacy);
   let released = 0;
   for (const job of jobs) {
     if (job.status === 'queued') {
-      job.status = 'authorized';
-      job.authorizedAt = new Date().toISOString();
-      released += 1;
+      const promoted: JobRecord = { ...job, status: 'authorized', authorizedAt: new Date().toISOString() };
+      if (await store.updateJobIf(promoted, ['queued'])) {
+        released += 1;
+      }
     }
   }
-  writeJson('jobs.json', jobs);
-  appendAudit({
+  await appendAudit({
     agent: 'Amey', machine: 'WAVES ONE', userAuth: 'CEO resume',
     action: 'agent.resumed', target: 'computer-agent', permission: 'system_configuration',
     result: `Agent execution resumed. ${released} held job(s) released.`,
@@ -1265,20 +1311,22 @@ export function resume(): { stopped: false; released: number } {
   return { stopped: false, released };
 }
 
-export function controlStatus(): {
+export async function controlStatus(): Promise<{
   stopped: boolean; paused: boolean; deviceCount: number; onlineCount: number;
   queuedJobs: number; runningJobs: number;
-} {
-  reconcile();
-  const { stopped, paused } = flags();
-  const devices = listDevices();
-  const jobs = loadJobs();
+}> {
+  await reconcile();
+  const { stopped, paused } = await flags();
+  const devices = await listDevices();
+  const store = await getStore();
+  const queuedJobs = await store.countJobsByStatus(['queued', 'authorized']);
+  const runningJobs = await store.countJobsByStatus(['running', 'dispatched']);
   return {
     stopped, paused,
     deviceCount: devices.length,
     onlineCount: devices.filter(d => d.online).length,
-    queuedJobs: jobs.filter(j => j.status === 'queued' || j.status === 'authorized').length,
-    runningJobs: jobs.filter(j => j.status === 'running' || j.status === 'dispatched').length,
+    queuedJobs,
+    runningJobs,
   };
 }
 
@@ -1292,17 +1340,11 @@ const ARTIFACT_MIME = new Set([
   'application/json', 'application/pdf', 'application/zip', 'application/octet-stream',
 ]);
 
-function artifactsDir(): string {
-  const d = path.join(dir(), 'artifacts');
-  fs.mkdirSync(d, { recursive: true });
-  return d;
-}
-
-export function saveArtifact(deviceId: string, input: {
+export async function saveArtifact(deviceId: string, input: {
   jobId?: string; name: string; kind?: string; mime?: string; dataBase64: string;
-}): ArtifactMeta {
-  const devices = loadDevices();
-  const device = devices.find(d => d.deviceId === deviceId);
+}): Promise<ArtifactMeta> {
+  const store = await getStore();
+  const device = await store.getDevice(deviceId);
   const name = typeof input.name === 'string' ? path.win32.basename(input.name).slice(0, 200) : '';
   if (!name) throw bad('Invalid artifact name.');
   const mime = typeof input.mime === 'string' ? input.mime.toLowerCase().slice(0, 100) : 'application/octet-stream';
@@ -1312,7 +1354,7 @@ export function saveArtifact(deviceId: string, input: {
   if (data.length === 0 || data.length > MAX_ARTIFACT_BYTES) throw bad('Artifact size out of bounds.');
   const meta: ArtifactMeta = {
     id: `art-${randomUUID()}`,
-    jobId: typeof input.jobId === 'string' ? input.jobId.slice(0, 80) : undefined,
+    ...(typeof input.jobId === 'string' ? { jobId: input.jobId.slice(0, 80) } : {}),
     name,
     kind: typeof input.kind === 'string' ? input.kind.slice(0, 64) : 'file',
     mime,
@@ -1320,74 +1362,47 @@ export function saveArtifact(deviceId: string, input: {
     sha256: createHash('sha256').update(data).digest('hex'),
     createdAt: new Date().toISOString(),
   };
-  fs.writeFileSync(path.join(artifactsDir(), `${meta.id}.bin`), data);
-  const all = readJson<ArtifactMeta[]>('artifacts.json', []);
-  all.push(meta);
-  writeJson('artifacts.json', all.slice(-500));
-  appendAudit({
-    agent: 'WAVES Computer Agent', machine: device?.machine || 'workstation',
-    userAuth: 'job execution', action: 'artifact.uploaded', target: meta.id,
-    permission: 'uploads.write', result: `${name} (${data.length} bytes, sha256 ${meta.sha256.slice(0, 12)}…).`,
+  // Metadata, bytes, and audit commit together (db) so a restart can never
+  // leave orphan metadata pointing at missing bytes, or vice versa.
+  await store.runInTransaction(async tx => {
+    await tx.insertArtifactMeta(meta);
+    await tx.saveArtifactBlob(meta.id, data);
+    await tx.auditAppend({
+      ts: new Date().toISOString(),
+      agent: 'WAVES Computer Agent', machine: device?.machine || 'workstation',
+      userAuth: 'job execution', action: 'artifact.uploaded', target: meta.id,
+      permission: 'uploads.write', result: `${name} (${data.length} bytes, sha256 ${meta.sha256.slice(0, 12)}…).`,
+    });
   });
   return meta;
 }
 
-export function listArtifacts(limit = 50): ArtifactMeta[] {
-  return readJson<ArtifactMeta[]>('artifacts.json', []).slice(-Math.max(1, Math.min(200, limit))).reverse();
+export async function listArtifacts(limit = 50): Promise<ArtifactMeta[]> {
+  const store = await getStore();
+  return store.listArtifactMetas(Math.max(1, Math.min(200, limit)));
 }
 
-export function artifactPath(id: string): { meta: ArtifactMeta; file: string } {
-  const meta = readJson<ArtifactMeta[]>('artifacts.json', []).find(a => a.id === id);
+export async function artifactBytes(id: string): Promise<{ meta: ArtifactMeta; data: Buffer }> {
+  const store = await getStore();
+  const meta = await store.findArtifactMeta(id);
   if (!meta) throw notFound('Artifact not found.');
-  const file = path.join(artifactsDir(), `${id}.bin`);
-  if (!fs.existsSync(file)) throw notFound('Artifact file missing.');
-  return { meta, file };
+  const data = await store.readArtifactBlob(id);
+  if (!data) throw notFound('Artifact file missing.');
+  return { meta, data };
 }
 
 // ---------------------------------------------------------------------------
 // Audit (append-only)
 // ---------------------------------------------------------------------------
 
-export interface AuditRecord {
-  ts: string;
-  agent: string;
-  machine: string;
-  userAuth: string;
-  application?: string;
-  action: string;
-  target: string;
-  command?: string;
-  permission: string;
-  approvalId?: string;
-  result: string;
-  error?: string;
-  before?: unknown;
-  after?: unknown;
+export async function appendAudit(record: Omit<AuditRecord, 'ts'>): Promise<void> {
+  const store = await getStore();
+  await store.auditAppend({ ...record, ts: new Date().toISOString() });
 }
 
-export function appendAudit(record: Omit<AuditRecord, 'ts'>): void {
-  const line = JSON.stringify({ ...record, ts: new Date().toISOString() });
-  fs.appendFileSync(path.join(dir(), 'audit.jsonl'), `${line}\n`);
-}
-
-export function listAudit(limit = 100): AuditRecord[] {
-  let content = '';
-  try {
-    content = fs.readFileSync(path.join(dir(), 'audit.jsonl'), 'utf8');
-  } catch {
-    return [];
-  }
-  const lines = content.trim().split('\n').filter(Boolean);
-  const capped = Math.max(1, Math.min(500, limit));
-  const events: AuditRecord[] = [];
-  for (const line of lines.slice(-capped)) {
-    try {
-      events.push(JSON.parse(line) as AuditRecord);
-    } catch {
-      // Skip corrupt lines; the log stays readable.
-    }
-  }
-  return events.reverse();
+export async function listAudit(limit = 100): Promise<AuditRecord[]> {
+  const store = await getStore();
+  return store.auditTail(Math.max(1, Math.min(500, limit)));
 }
 
 export { CAPABILITIES };

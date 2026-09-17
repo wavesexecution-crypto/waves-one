@@ -12,7 +12,12 @@ export function ownerTokenEnforced(): boolean {
 
 export function requireOwner(req: Request): NextResponse | null {
   const token = process.env.WAVES_OWNER_TOKEN;
-  if (!token) return null;
+  if (!token) {
+    if (process.env.NODE_ENV === 'production' || process.env.VERCEL === '1') {
+      return NextResponse.json({ error: 'Owner authorization required.' }, { status: 401 });
+    }
+    return null;
+  }
   const header = req.headers.get('authorization') || '';
   const presented = header.startsWith('Bearer ') ? header.slice('Bearer '.length) : '';
   const a = Buffer.from(presented, 'utf8');

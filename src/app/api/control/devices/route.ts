@@ -6,7 +6,7 @@ export const dynamic = 'force-dynamic';
 
 // Device inventory. Contains status and telemetry only — never credentials.
 export async function GET(req: Request) {
-  const blocked = guardControl(req);
+  const blocked = await guardControl(req);
   if (blocked) return blocked;
-  return NextResponse.json({ devices: listDevices() });
+  return NextResponse.json({ devices: await listDevices() });
 }

@@ -9,10 +9,10 @@ export const dynamic = 'force-dynamic';
 // credential is invalidated immediately. Never exposed to the browser UI.
 export async function POST(req: Request) {
   try {
-    const device = verifyDevice(req.headers.get('authorization'));
-    const blocked = guardAgentDevice(device.deviceId, 10, 'rotate');
+    const device = await verifyDevice(req.headers.get('authorization'));
+    const blocked = await guardAgentDevice(device.deviceId, 10, 'rotate');
     if (blocked) return blocked;
-    return NextResponse.json(rotateSecret(device.deviceId));
+    return NextResponse.json(await rotateSecret(device.deviceId));
   } catch (error) {
     return errorResponse(error);
   }

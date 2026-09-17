@@ -5,7 +5,7 @@ import { guardControl } from '@/lib/api-guards';
 export const dynamic = 'force-dynamic';
 
 export async function POST(req: Request) {
-  const blocked = guardControl(req, 60);
+  const blocked = await guardControl(req, 60);
   if (blocked) return blocked;
-  return NextResponse.json(resume());
+  return NextResponse.json(await resume());
 }

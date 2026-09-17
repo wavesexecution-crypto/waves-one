@@ -8,11 +8,11 @@ export const dynamic = 'force-dynamic';
 // action on its next flags check and reports it as stopped. Jobs created
 // during the stop wait in held state until resume.
 export async function POST(req: Request) {
-  const blocked = guardControl(req, 60);
+  const blocked = await guardControl(req, 60);
   if (blocked) return blocked;
   try {
     const body = await req.json().catch(() => ({}));
-    return NextResponse.json(stopAll(body.cancelQueued !== false));
+    return NextResponse.json(await stopAll(body.cancelQueued !== false));
   } catch (error) {
     return errorResponse(error);
   }

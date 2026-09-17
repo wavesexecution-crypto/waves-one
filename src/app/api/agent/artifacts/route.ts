@@ -8,11 +8,11 @@ export const dynamic = 'force-dynamic';
 // Size-capped, type-restricted, hashed, and bound to the uploading device.
 export async function POST(req: Request) {
   try {
-    const device = verifyDevice(req.headers.get('authorization'));
-    const blocked = guardAgentDevice(device.deviceId, 60);
+    const device = await verifyDevice(req.headers.get('authorization'));
+    const blocked = await guardAgentDevice(device.deviceId, 60);
     if (blocked) return blocked;
     const body = await req.json();
-    return NextResponse.json({ artifact: saveArtifact(device.deviceId, body) });
+    return NextResponse.json({ artifact: await saveArtifact(device.deviceId, body) });
   } catch (error) {
     return errorResponse(error);
   }
