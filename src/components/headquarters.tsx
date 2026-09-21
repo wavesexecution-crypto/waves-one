@@ -124,14 +124,14 @@ function Headquarters() {
   const newGoal = useCallback((initial = "") => setGoalFlow({ open: true, initial }), []);
   const pending = state.approvals.filter(a => a.status === "pending").length;
   const incidents = state.incidents.filter(i => i.status !== "resolved").length;
-  if (!ready) return <div className="entry-screen"><Brand compact /><p className="muted">Preparing your headquarters…</p></div>;
+  if (!ready) return <div className="entry-screen"><Brand compact /><p className="muted">Preparing your headquartersâ€¦</p></div>;
   if (!entered) return <div className="entry-screen">
     <Brand />
     <h1>The operating headquarters<br />of Waves.</h1>
     <p className="entry-copy">You give direction. WAVES executes. This is a local, interactive prototype: decisions, delegation, and agent supervision are simulated in your browser. No external systems are connected, and no credentials are requested.</p>
     <button className="button primary large" onClick={enter}>Enter WAVES ONE<CircleCheck size={17} /></button>
     <div className="entry-facts"><div><span className="eyebrow">RUNS</span><span>Entirely in this browser</span></div><div><span className="eyebrow">CONNECTS</span><span>Nothing external yet</span></div><div><span className="eyebrow">DECIDES</span><span>Only you, always</span></div></div>
-    <p className="entry-foot">OBSIDIAN design language · Demonstration build</p>
+    <p className="entry-foot">OBSIDIAN design language Â· Demonstration build</p>
   </div>;
   return <div className="shell">
     <header className="top-bar">
@@ -145,16 +145,16 @@ function Headquarters() {
     <div className="shell-body">
       <nav className="sidebar" aria-label="Primary">
         {NAV.map(item => <button key={item.screen} className={`nav-item ${screen === item.screen ? "active" : ""}`} onClick={() => navigate(item.screen)} aria-current={screen === item.screen ? "page" : undefined}>{<item.icon size={18} />}<span>{item.screen}</span>{item.screen === "Approvals" && pending > 0 && <span className="nav-count">{pending}</span>}{item.screen === "Systems" && incidents > 0 && <span className="nav-count alert">{incidents}</span>}</button>)}
-        <div className="sidebar-foot"><button className="agent-summary" onClick={() => navigate("AI")}><span className="agent-summary-icon"><Terminal size={18} /></span><div><strong>Computer agent</strong><span>{state.agentPaused ? "Paused" : "Supervised"}</span></div></button><p className="rail-footer">DEMO · SIMULATED DATA</p></div>
+        <div className="sidebar-foot"><button className="agent-summary" onClick={() => navigate("AI")}><span className="agent-summary-icon"><Terminal size={18} /></span><div><strong>Computer agent</strong><span>{state.agentPaused ? "Paused" : "Supervised"}</span></div></button></div>
       </nav>
       <main className="content" id="main">
         {screen === "Overview" ? <Overview open={open} navigate={navigate} newGoal={() => newGoal()} command={() => setCommand(true)} /> : <Workspace screen={screen} open={open} navigate={navigate} newGoal={() => newGoal()} command={() => setCommand(true)} />}
-        <footer className="content-footer">WAVES ONE · Local prototype · Decisions affect demo state only</footer>
+        <footer className="content-footer">WAVES ONE Â· Local prototype Â· Decisions affect demo state only</footer>
       </main>
     </div>
     <nav className="bottom-nav" aria-label="Primary mobile">
-      {NAV.filter(item => item.primary).map(item => <button key={item.screen} className={screen === item.screen ? "active" : ""} onClick={() => navigate(item.screen)} aria-current={screen === item.screen ? "page" : undefined}>{<item.icon size={21} />}<span>{item.screen === "Overview" ? "Home" : item.screen}</span>{item.screen === "Approvals" && pending > 0 && <span className="nav-count">{pending}</span>}</button>)}
-      <button className={MORE_SCREENS.includes(screen) ? "active" : ""} onClick={() => setMore(true)}><MoreHorizontal size={21} /><span>More</span></button>
+      {NAV.filter(item => ["Overview", "Approvals", "Activity"].includes(item.screen)).map(item => <button key={item.screen} className={screen === item.screen ? "active" : ""} onClick={() => navigate(item.screen)} aria-current={screen === item.screen ? "page" : undefined}>{<item.icon size={18} />}<span>{item.screen === "Overview" ? "Home" : item.screen}</span>{item.screen === "Approvals" && pending > 0 && <span className="nav-count">{pending}</span>}</button>)}
+      <button className={MORE_SCREENS.includes(screen) ? "active" : ""} onClick={() => setMore(true)}><MoreHorizontal size={18} /><span>More</span></button>
     </nav>
     {more && <Modal title="More" eyebrow="NAVIGATE" onClose={() => setMore(false)}>
       <div className="more-grid">{NAV.filter(item => !item.primary && item.screen !== "Overview").map(item => <button className="more-item" key={item.screen} onClick={() => { navigate(item.screen); setMore(false); }}>{<item.icon size={20} />}<span>{item.screen}</span>{item.screen === "Approvals" && pending > 0 && <span className="nav-count">{pending}</span>}{item.screen === "Systems" && incidents > 0 && <span className="nav-count alert">{incidents}</span>}</button>)}</div>
@@ -172,3 +172,4 @@ function Headquarters() {
 export default function Home() {
   return <StoreProvider><Headquarters /></StoreProvider>;
 }
+
