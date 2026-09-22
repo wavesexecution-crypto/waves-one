@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, type ReactNode } from "react";
-import { AlertTriangle, ArrowUpRight, Bot, Download, FileText, Layers, Pause, Play, Plus, Search, ShieldCheck, Terminal, Users, Waves } from "lucide-react";
+import { ArrowUpRight, FileText, Pause, Play, Plus, Search, ShieldCheck, Terminal, Users, Waves } from "lucide-react";
 import { useStore } from "./store";
 import { DevicePanel } from "./agent-live";
 import { artifactDownloadUrl, clearOwnerToken, decideApproval, getDevices, getOwnerTokenMode, getPolicy, hideSecretParams, listApprovals, listArtifacts, putPolicy, setOwnerToken } from "../lib/agent-client";
@@ -28,7 +28,7 @@ function Intro({ eyebrow, title, copy, children }: { eyebrow: string; title: str
 }
 
 function Filters({ options, value, onChange, label }: { options: string[]; value: string; onChange: (value: string) => void; label: string }) {
-  return <div className="filter-bar" role="group" aria-label={label}>{options.map(option => <button key={option} className={`filter-chip ${value === option ? "active" : ""}`} aria-pressed={value === option} onClick={() => onChange(option)}>{option.replaceAll("-", " ")}</button>)}</div>;
+  return <div className="filter-bar" role="group" aria-label={label}>{options.map(option => <button key={option} className={`filter-chip ${value === option ? "active" : ""}`} aria-pressed={value === option} onClick={() => onChange(option)}>{option.replaceAll("-", " ").toUpperCase()}</button>)}</div>;
 }
 
 function SearchField({ value, onChange, placeholder }: { value: string; onChange: (value: string) => void; placeholder: string }) {
@@ -44,21 +44,20 @@ function Goals({ open, newGoal }: ViewProps) {
   const [status, setStatus] = useState("All");
   const goals = state.goals.filter(goal => status === "All" || goal.status === status);
   return <>
-    <Intro eyebrow="DIRECTION BEFORE EXECUTION" title="Goals" copy="The outcomes that move Waves forward."><button className="button primary" onClick={newGoal}><Plus size={16} />New goal</button></Intro>
+    <Intro eyebrow="" title="Goals" copy=""><button className="button primary" onClick={newGoal}><Plus size={16} />New goal</button></Intro>
     <Filters label="Goal status" options={["All", "planning", "active", "completed"]} value={status} onChange={setStatus} />
-    <SectionTitle title="YOUR GOALS" count={goals.length} />
+    <SectionTitle title="Goals" count={goals.length} />
     <div className="card-grid">{goals.map(goal => {
       const tasks = state.tasks.filter(task => task.goalId === goal.id);
       const done = tasks.filter(task => task.status === "completed").length;
       const progress = tasks.length ? Math.round(done / tasks.length * 100) : 0;
       return <button className="info-card goal-card" key={goal.id} onClick={() => open({ type: "goal", id: goal.id })}>
-        <div className="goal-top"><span className="project-mark">{goal.project.slice(0, 2).toUpperCase()}</span><StatusBadge status={goal.status} /></div>
-        <p className="eyebrow">{goal.project}</p><h3>{goal.title}</h3><p>{goal.description}</p>
-        <p className="muted">{goal.owner} · Due {goal.deadline}</p>
-        <div className="progress-label"><span>{done} / {tasks.length} tasks complete</span><span>{progress}%</span></div><Progress value={progress} />
+        <p className="eyebrow">{goal.project}</p><h3>{goal.title}</h3>
+        <p className="muted">{done} / {tasks.length} tasks · Due {goal.deadline}</p>
+        <div className="progress-label"><span>{progress}%</span></div><Progress value={progress} />
       </button>;
     })}</div>
-    {!goals.length && <Empty title="No goals in this view">Choose another status or create a goal to set the next direction.</Empty>}
+    {!goals.length && <Empty title="No goals">Create a goal to set the next direction.</Empty>}
   </>;
 }
 
@@ -71,13 +70,13 @@ function Work({ open, newGoal }: ViewProps) {
     return goal && (status === "All" || task.status === status) && `${task.title} ${task.owner} ${task.project} ${goal.title}`.toLowerCase().includes(query.trim().toLowerCase());
   });
   return <>
-    <Intro eyebrow="EVERY TASK HAS A PURPOSE" title="Work" copy="Follow execution from a goal to its final output."><button className="button" onClick={newGoal}><Plus size={16} />Plan from a goal</button></Intro>
-    <div className="toolbar"><SearchField value={query} onChange={setQuery} placeholder="Search work, owners, or goals" /><span className="muted">{tasks.length} linked tasks</span></div>
+    <Intro eyebrow="" title="Work" copy=""><button className="button" onClick={newGoal}><Plus size={16} />New goal</button></Intro>
+    <div className="toolbar"><SearchField value={query} onChange={setQuery} placeholder="Search work" /><span className="muted" style={{ fontFamily: 'var(--font-geist-mono)', fontSize: 10 }}>{tasks.length} linked tasks</span></div>
     <Filters label="Task status" options={["All", "planning", "queued", "running", "blocked", "review", "completed"]} value={status} onChange={setStatus} />
-    <div className="table-wrap panel"><table className="data-table"><thead><tr><th scope="col">Task / goal</th><th scope="col">Owner</th><th scope="col">Status</th><th scope="col">Priority</th><th scope="col">Due</th></tr></thead><tbody>{tasks.map(task => {
+    <div className="table-wrap panel"><table className="data-table"><thead><tr><th scope="col">TASK</th><th scope="col">OWNER</th><th scope="col">STATUS</th><th scope="col">DUE</th></tr></thead><tbody>{tasks.map(task => {
       const goal = state.goals.find(item => item.id === task.goalId)!;
-      return <tr key={task.id}><td><div className="row-main"><TextLink onClick={() => open({ type: "task", id: task.id })}>{task.title}</TextLink><TextLink onClick={() => open({ type: "goal", id: goal.id })}>{goal.title}</TextLink><small className="muted">{task.project}</small></div></td><td>{task.owner}</td><td><StatusBadge status={task.status} /></td><td>{task.priority}</td><td className="mono">{task.deadline}</td></tr>;
-    })}</tbody></table>{!tasks.length && <Empty title="No matching work">Try another search or status. New work starts with a goal.</Empty>}</div>
+      return <tr key={task.id}><td><div className="row-main"><button className="text-link" onClick={() => open({ type: "task", id: task.id })} style={{ fontWeight: 450 }}>{task.title}</button><small className="muted" style={{ fontSize: 10 }}>{task.project} · {goal.title}</small></div></td><td style={{ fontSize: 12 }}>{task.owner}</td><td><StatusBadge status={task.status} /></td><td className="mono" style={{ fontSize: 11 }}>{task.deadline}</td></tr>;
+    })}</tbody></table>{!tasks.length && <Empty title="No work">Try another search or status.</Empty>}</div>
   </>;
 }
 
@@ -90,8 +89,8 @@ function People({ open }: ViewProps) {
   const { state } = useStore();
   const [department, setDepartment] = useState("All");
   return <>
-    <Intro eyebrow="ONE ORGANIZATION. DIFFERENT CAPABILITIES." title="People" copy="Your people, agents, and automated workers. Empty seats stay visible." />
-    <div className="metric-strip"><div className="metric"><strong>{state.workers.filter(worker => ["Employee", "Contractor"].includes(worker.type)).length}</strong><span>People</span></div><div className="metric"><strong>{state.workers.filter(worker => ["AI agent", "Automated worker"].includes(worker.type)).length}</strong><span>Digital workers</span></div><div className="metric"><strong>{departments.length}</strong><span>Departments</span></div></div>
+    <Intro eyebrow="" title="People" copy="" />
+    <div className="metric-strip" style={{ border: '1px solid #141414', background: 'transparent' }}><div className="metric" style={{ background: 'transparent' }}><strong>{state.workers.filter(worker => ["Employee", "Contractor"].includes(worker.type)).length}</strong><span>People</span></div><div className="metric" style={{ background: 'transparent' }}><strong>{state.workers.filter(worker => ["AI agent", "Automated worker"].includes(worker.type)).length}</strong><span>Digital workers</span></div><div className="metric" style={{ background: 'transparent' }}><strong>{departments.length}</strong><span>Departments</span></div></div>
     <Filters label="Department" options={["All", ...departments]} value={department} onChange={setDepartment} />
     <div className="stack">{departments.filter(name => department === "All" || department === name).map(name => {
       const workers = state.workers.filter(worker => worker.department === name);
@@ -197,10 +196,10 @@ function Approvals({ open }: ViewProps) {
   const [view, setView] = useState("Pending");
   const approvals = state.approvals.filter(approval => view === "Pending" ? approval.status === "pending" : approval.status !== "pending");
   return <>
-    <Intro eyebrow="HUMAN JUDGMENT, AT THE RIGHT MOMENT" title="Approvals" copy="Review the evidence. Understand the impact. Make the call." />
+    <Intro eyebrow="" title="Approvals" copy="Review and decide." />
     <Filters label="Approval view" options={["Pending", "History"]} value={view} onChange={setView} />
-    <SectionTitle title={view === "Pending" ? "NEEDS YOUR DECISION" : "DECISION HISTORY"} count={approvals.length} />
-    <div className="list-panel">{approvals.map(approval => <button className="list-row" key={approval.id} onClick={() => open({ type: "approval", id: approval.id })}><ShieldCheck size={20} /><div className="row-main"><span className="eyebrow">{approval.project} / {approval.kind}</span><strong>{approval.title}</strong><span className="muted">{approval.what}</span><small className="muted">Requested by {approval.requestedBy} · {dateLabel(approval.createdAt)}</small></div><StatusBadge status={approval.status} /><ArrowUpRight size={16} /></button>)}{!approvals.length && <Empty title={view === "Pending" ? "Nothing waiting on you" : "No decisions yet"}>{view === "Pending" ? "New requests will appear here when your judgment is needed." : "Approved, rejected, and returned requests will appear here."}</Empty>}</div>
+    <SectionTitle title={view === "Pending" ? "PENDING" : "HISTORY"} count={approvals.length} />
+    <div className="list-panel">{approvals.map(approval => <button className="list-row" key={approval.id} onClick={() => open({ type: "approval", id: approval.id })}><div className="row-main"><span className="eyebrow">{approval.project}</span><strong>{approval.title}</strong><span className="muted" style={{ fontSize: 11 }}>{approval.what}</span></div><span className="mono" style={{ fontSize: 10, color: '#888', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{approval.status}</span><span className="muted" style={{ fontSize: 11, marginLeft: 12 }}>Review</span></button>)}{!approvals.length && <Empty title={view === "Pending" ? "Nothing pending" : "No history"}>{view === "Pending" ? "Requests will appear here." : "Decisions will appear here."}</Empty>}</div>
     <ComputerAgentApprovals />
   </>;
 }
@@ -232,26 +231,25 @@ function ActivityView({ open }: ViewProps) {
     catch { notify("Audit download failed. Please try again."); }
   }
   return <>
-    <Intro eyebrow="NOTHING HAPPENS IN A BLACK BOX" title="Activity" copy="A traceable record of the decisions and actions in this demo." />
-    <div className="toolbar"><button className="button" onClick={exportAudit}><Download size={16} />Export audit</button></div>
+    <Intro eyebrow="" title="Activity" copy="" />
+    <div className="toolbar" style={{ justifyContent: 'space-between' }}><span className="eyebrow" style={{ letterSpacing: '0.14em' }}>ACTIVITY</span><button className="button small" onClick={exportAudit}>Export audit</button></div>
     <div className="toolbar"><Filters label="Activity category" options={["All", "Person", "Agent", "System", "Goal"]} value={category} onChange={setCategory} /><button className={`filter-chip ${audit ? "active" : ""}`} aria-pressed={audit} onClick={() => setAudit(!audit)}>Audit table</button></div>
-    <div className="filter-bar"><SelectFilter label="Severities" value={severity} onChange={setSeverity} options={options(["info", "success", "warning", "error"])} /><SelectFilter label="Actors" value={actor} onChange={setActor} options={options(state.activity.map(event => event.actor))} /><SelectFilter label="Projects" value={project} onChange={setProject} options={options(state.activity.flatMap(event => event.project ? [event.project] : []))} /><SelectFilter label="Goals" value={goal} onChange={setGoal} options={state.goals.map(item => ({ value: item.id, label: item.title }))} /></div>
-    <SectionTitle title="AUDIT TRAIL" count={events.length}><span className="muted">Newest first</span></SectionTitle>
+    <div className="filter-bar"><SelectFilter label="Severity" value={severity} onChange={setSeverity} options={options(["info", "success", "warning", "error"])} /><SelectFilter label="Actor" value={actor} onChange={setActor} options={options(state.activity.map(event => event.actor))} /><SelectFilter label="Project" value={project} onChange={setProject} options={options(state.activity.flatMap(event => event.project ? [event.project] : []))} /><SelectFilter label="Goal" value={goal} onChange={setGoal} options={state.goals.map(item => ({ value: item.id, label: item.title }))} /></div>
+    <SectionTitle title="Audit trail" count={events.length} />
     {audit ? <div className="table-wrap panel"><table className="data-table"><thead><tr>{["Actor", "Timestamp", "Target", "Action", "Result", "Approval state"].map(label => <th key={label} scope="col">{label}</th>)}</tr></thead><tbody>{events.map(event => <tr key={event.id}><td>{event.actor}<br /><small className="muted">{event.category}</small></td><td><time dateTime={event.timestamp} className="mono">{event.timestamp}</time></td><td>{event.target}</td><td>{event.action}</td><td>{event.result}</td><td>{event.approvalState}</td></tr>)}</tbody></table></div> : <div className="list-panel">{events.map(event => {
       const selection = selectionFor(event);
-      return <article className="list-row" key={event.id}><Badge tone={event.severity}>{event.category}</Badge><div className="row-main"><strong>{event.actor} · {event.action}</strong><span>{event.result}</span><small className="muted">{event.project || event.target} · Approval: {event.approvalState}</small>{selection && <TextLink onClick={() => open(selection)}>View {selection.type}</TextLink>}</div><time dateTime={event.timestamp} title={event.timestamp} className="mono muted">{dateLabel(event.timestamp)}</time></article>;
+      return <article className="list-row" key={event.id} style={{ padding: '20px 0', borderBottom: '1px solid #141414' }}><div className="row-main"><strong style={{ fontSize: 13, fontWeight: 420 }}>{event.actor} — {event.action}</strong><span className="muted" style={{ fontSize: 11, marginTop: 4 }}>{event.result}</span><small className="muted" style={{ fontSize: 10, fontFamily: 'var(--font-geist-mono)', marginTop: 6 }}>{event.project || event.target} · {event.approvalState}</small></div><div style={{ textAlign: 'right' }}><time dateTime={event.timestamp} title={event.timestamp} className="mono" style={{ fontSize: 10, color: '#5a5a5a' }}>{dateLabel(event.timestamp)}</time>{selection && <div style={{ marginTop: 6 }}><TextLink onClick={() => open(selection)}><span style={{ fontSize: 10 }}>View {selection.type}</span></TextLink></div>}</div></article>;
     })}</div>}
-    {!events.length && <Empty title="No activity matches these filters">Choose another actor, project, goal, or severity to broaden the view.</Empty>}
+    {!events.length && <Empty title="No activity">No events match these filters.</Empty>}
   </>;
 }
 
 function Systems({ open }: ViewProps) {
   const { state } = useStore();
   return <>
-    <Intro eyebrow="OPERATIONS, WITH VISIBILITY" title="Systems" copy="Investigate incidents and inspect the tools available to your organization." />
-    <div className="notice"><ShieldCheck size={18} /><span>Demo environment. Connectors are illustrative; no external services are connected.</span></div>
-    <section><SectionTitle title="INCIDENTS" count={state.incidents.filter(incident => incident.status !== "resolved").length} /><div className="list-panel">{state.incidents.map(incident => <button className="list-row" key={incident.id} onClick={() => open({ type: "incident", id: incident.id })}><AlertTriangle size={20} className={incident.status === "resolved" ? "muted" : `${incident.severity}-text`} /><div className="row-main"><strong>{incident.title}</strong><span className="muted">{incident.project} · {incident.impact}</span><small className="muted">Detected {incident.detected} · {incident.agent}</small></div><StatusBadge status={incident.status} /><ArrowUpRight size={16} /></button>)}{!state.incidents.length && <Empty title="No recorded incidents">System events will appear here as they are recorded.</Empty>}</div></section>
-    <section><SectionTitle title="CONNECTOR REGISTRY" count={state.connectors.length} /><div className="card-grid">{state.connectors.map(connector => <button key={connector.id} className="info-card" onClick={() => open({ type: "connector", id: connector.id })}><div className="goal-top"><Layers size={21} /><ArrowUpRight size={16} /></div><h3>{connector.name}</h3><StatusBadge status={connector.status} /><p>{connector.description}</p><small className="muted">{connector.capabilities.join(" · ")}</small></button>)}</div></section>
+    <Intro eyebrow="" title="Systems" copy="" />
+    <section><SectionTitle title="Incidents" count={state.incidents.filter(incident => incident.status !== "resolved").length} /><div className="list-panel">{state.incidents.map(incident => <button className="list-row" key={incident.id} onClick={() => open({ type: "incident", id: incident.id })}><div className="row-main"><span className="eyebrow" style={{ color: incident.severity === 'error' ? 'var(--error)' : 'var(--warning)', fontSize: 9 }}>{incident.severity.toUpperCase()}</span><strong style={{ fontSize: 13 }}>{incident.title}</strong><span className="muted" style={{ fontSize: 11 }}>{incident.impact}</span></div><span className="mono" style={{ fontSize: 10, color: '#888', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{incident.status}</span></button>)}{!state.incidents.length && <Empty title="No incidents">System events will appear here.</Empty>}</div></section>
+    <section><SectionTitle title="Connectors" count={state.connectors.length} /><div style={{ borderTop: '1px solid #141414' }}>{state.connectors.map(connector => <button key={connector.id} className="list-row" onClick={() => open({ type: "connector", id: connector.id })} style={{ padding: '16px 0', borderBottom: '1px solid #141414' }}><div className="row-main"><strong style={{ fontSize: 13 }}>{connector.name}</strong><span className="mono" style={{ fontSize: 10, color: '#888', textTransform: 'uppercase' }}>{connector.status}</span></div><span className="muted" style={{ fontSize: 10 }}>{connector.capabilities.slice(0, 3).join(" · ")}</span></button>)}</div></section>
   </>;
 }
 
@@ -307,10 +305,10 @@ function Files({ open }: ViewProps) {
   const projects = [...new Set(state.files.map(file => file.project))].sort();
   const files = state.files.filter(file => (project === "all" || file.project === project) && `${file.name} ${file.kind} ${file.createdBy}`.toLowerCase().includes(query.trim().toLowerCase()));
   return <>
-    <Intro eyebrow="THE OUTPUT, NOT JUST THE UPDATE" title="Files" copy="Artifacts attached to real goals. Open a file to inspect its contents." />
-    <div className="toolbar"><SearchField value={query} onChange={setQuery} placeholder="Search files or creators" /><SelectFilter label="Projects" value={project} onChange={setProject} options={projects.map(value => ({ value, label: value }))} /></div>
-    <SectionTitle title="ARTIFACTS" count={files.length} />
-    <div className="list-panel">{files.map(file => <button className="list-row" key={file.id} onClick={() => open({ type: "file", id: file.id })}><FileText size={21} /><div className="row-main"><strong>{file.name}</strong><span className="muted">{file.project} · {file.kind} · {file.size}</span><small className="muted">{state.goals.find(goal => goal.id === file.goalId)?.title || "Goal unavailable"} · {file.createdBy} · {dateLabel(file.createdAt)}</small></div><ArrowUpRight size={16} /></button>)}{!files.length && <Empty title="No matching files">Try another project or search term.</Empty>}</div>
+    <Intro eyebrow="" title="Files" copy="" />
+    <div className="toolbar"><SearchField value={query} onChange={setQuery} placeholder="Search files" /><SelectFilter label="Project" value={project} onChange={setProject} options={projects.map(value => ({ value, label: value }))} /></div>
+    <SectionTitle title="Artifacts" count={files.length} />
+    <div className="list-panel">{files.map(file => <button className="list-row" key={file.id} onClick={() => open({ type: "file", id: file.id })}><div className="row-main"><strong style={{ fontSize: 13 }}>{file.name}</strong><span className="muted" style={{ fontSize: 11 }}>{file.project} · {file.kind}</span></div><span className="mono" style={{ fontSize: 10, color: '#5a5a5a' }}>{dateLabel(file.createdAt)}</span></button>)}{!files.length && <Empty title="No files">No matching files.</Empty>}</div>
     <AgentArtifacts />
   </>;
 }
@@ -338,15 +336,16 @@ function AI({ command, navigate }: ViewProps) {
   const events = state.activity.filter(event => event.category === "Agent").sort((a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp));
   const projects = [...new Set(state.goals.map(goal => goal.project))];
   return <>
-    <Intro eyebrow="SUPERVISED BY DESIGN" title="Waves AI" copy="Give direction. Inspect the plan. Keep control of what happens next."><button className="button primary" onClick={command}><Waves size={16} />Open command</button></Intro>
-    <div className="notice"><Bot size={20} /><span><strong>Deterministic simulation, not an LLM.</strong> Commands use predefined local logic. No model, real terminal, browser automation, or external account is connected.</span></div>
+    <Intro eyebrow="" title="AI Orchestration" copy=""><button className="button" onClick={command}><Waves size={14} />Open command</button></Intro>
+    <div style={{ marginBottom: 32, padding: '16px 0', borderBottom: '1px solid #141414' }}>
+      <span className="eyebrow" style={{ fontSize: 9, letterSpacing: '0.14em' }}>{liveOnline ? 'Device connected' : 'No live device'}</span>
+      <p className="muted" style={{ fontSize: 11, marginTop: 8 }}>{liveOnline ? 'Jobs execute on the authorized workstation sandbox.' : 'Pair a device for live execution.'}</p>
+    </div>
     <DevicePanel />
-    {liveOnline
-      ? <div className="notice"><Bot size={20} /><span>Live device connected — jobs below execute on the authorized workstation sandbox.</span></div>
-      : <div className="notice"><Bot size={20} /><span>Demo mode — no workstation paired. Pair a device for live execution.</span></div>}
     <div className="split-grid"><section className="panel"><SectionTitle title="COMPUTER AGENT"><Badge>{state.agentPaused ? "Paused" : "Supervised"}</Badge></SectionTitle><div className="stack"><Terminal size={27} /><h3>A visible, bounded operator.</h3><p className="muted">Simulate a read-only inspection of demo work. Pausing stops new inspections; it does not change existing tasks.</p>{!liveOnline && <div className="toolbar"><button className="button" onClick={() => dispatch({ type: "AGENT_TOGGLE" })}>{state.agentPaused ? <Play size={15} /> : <Pause size={15} />}{state.agentPaused ? "Resume agent" : "Pause agent"}</button><button className="button primary" disabled={!canRun} aria-describedby="inspection-gate" onClick={() => { if (!canRun) return; dispatch({ type: "AGENT_RUN" }); notify("Simulated inspection completed. Review the agent audit below."); }}><Play size={15} />Run inspection</button></div>}<p id="inspection-gate" className={canRun ? "muted" : "warning-text"}>{reason}</p><span className="mono">{state.agentRuns} simulated inspections</span><TextLink onClick={() => navigate("Settings")}>Review permissions</TextLink></div></section>
     <section className="panel"><SectionTitle title="WORKSPACE SCOPE" /><p className="muted">Illustrative workspaces derived from your goals. Authorization applies only to local demo data, never to actual directories.</p><div className="stack">{projects.map(project => <div className="permission-row" key={project}><div className="row-main"><strong>{project}</strong><span className="muted">Demo workspace · read-only inspection</span></div><StatusBadge status={readPermission?.value || "denied"} /></div>)}</div></section></div>
     <section><SectionTitle title="AGENT AUDIT" count={events.length}><span className="muted">Chronological · oldest first</span></SectionTitle><div className="agent-console" aria-label="Simulated agent audit, not a terminal">{events.map(event => <div className="console-line" key={event.id}><time dateTime={event.timestamp} className="mono muted">{dateLabel(event.timestamp)}</time><div className="row-main"><strong>{event.actor} · {event.action}</strong><span>{event.result}</span><small className="muted">Target: {event.target} · Approval: {event.approvalState}</small></div></div>)}{!events.length && <Empty title="No agent actions recorded">Run an authorized inspection to start the audit trail.</Empty>}</div></section>
+    <p className="muted" style={{ fontSize: 10, marginTop: 32, borderTop: '1px solid #141414', paddingTop: 12 }}>Deterministic simulation — no LLM, no external account. Live data resumes when the server is reachable.</p>
   </>;
 }
 
@@ -509,8 +508,8 @@ function Settings() {
   const [resetOpen, setResetOpen] = useState(false);
   const [notificationPreview, setNotificationPreview] = useState(true);
   return <>
-    <Intro eyebrow="CLEAR BOUNDARIES. DELIBERATE CONTROL." title="Settings" copy="Decide what workers can do, and where a human must step in." />
-    <section className="settings-section panel"><SectionTitle title="ACTION PERMISSIONS" /><p className="muted">Saved in this browser with the demo. High-risk actions always require approval or remain denied.</p>{state.permissions.map(permission => <div className="permission-row" key={permission.id}><div className="row-main"><strong>{permission.label} <Badge tone={permission.risk === "high" ? "warning" : "neutral"}>{permission.risk} risk</Badge></strong><span className="muted">{permission.description}</span></div><select aria-label={`${permission.label} permission`} value={permission.value} onChange={event => { dispatch({ type: "PERMISSION", id: permission.id, value: event.target.value as Permission["value"] }); notify(`${permission.label} permission updated.`); }}>{permission.risk === "low" && <option value="allowed">Allowed</option>}<option value="approval">Requires approval</option><option value="denied">Denied</option></select></div>)}</section>
+    <Intro eyebrow="" title="Settings" copy="" />
+    <section className="settings-section panel"><SectionTitle title="Permissions" /><p className="muted" style={{ fontSize: 11, marginBottom: 16 }}>Saved in this browser.</p>{state.permissions.map(permission => <div className="permission-row" key={permission.id} style={{ padding: '12px 0', borderBottom: '1px solid #141414' }}><div className="row-main"><strong style={{ fontSize: 12, fontWeight: 450 }}>{permission.label}</strong><span className="mono" style={{ fontSize: 9, color: '#5a5a5a', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{permission.risk} risk</span></div><select aria-label={`${permission.label} permission`} value={permission.value} onChange={event => { dispatch({ type: "PERMISSION", id: permission.id, value: event.target.value as Permission["value"] }); notify(`${permission.label} permission updated.`); }} style={{ fontSize: 11, minWidth: 140 }}>{permission.risk === "low" && <option value="allowed">Allowed</option>}<option value="approval">Approval required</option><option value="denied">Denied</option></select></div>)}</section>
     <ComputerAgentPolicy />
     <section className="settings-section panel"><SectionTitle title="NOTIFICATION PREVIEW" /><div className="permission-row"><div className="row-main"><strong>Sample in-app notification</strong><span className="muted">Cosmetic preview only. This switch does not change alerts or delivery and resets when you leave this screen.</span></div><button className={`toggle ${notificationPreview ? "active" : ""}`} role="switch" aria-checked={notificationPreview} aria-label="Show sample notification" onClick={() => setNotificationPreview(!notificationPreview)}>{notificationPreview ? "On" : "Off"}</button></div>{notificationPreview && <div className="notice"><ShieldCheck size={18} /><span>Preview: a decision is ready for your review.</span></div>}</section>
     <section className="settings-section panel"><SectionTitle title="DEMO DATA" /><p className="muted">This prototype has no backend or authentication. Organization changes are stored locally in this browser.</p><button className="button danger" onClick={() => setResetOpen(true)}>Reset demo data</button></section>
