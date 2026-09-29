@@ -1,0 +1,106 @@
+{
+    "name":  "orb-emerge",
+    "description":  "Orb-origin morph proof: pulse, disperse to center, UI emerges from the intelligence point, orb dissolves. The atomic transformation pattern.",
+    "choreography":  {
+                         "pattern":  "shared-orb-origin: every UI state enters from center-first stagger; exits return center-first"
+                     },
+    "ops":  [
+                {
+                    "id":  "scene-mublqzdp-1",
+                    "kind":  "scene",
+                    "scene":  {
+                                  "elements":  [
+                                                   {
+                                                       "key":  "orb1",
+                                                       "kind":  "orb",
+                                                       "act":  1,
+                                                       "count":  72
+                                                   },
+                                                   {
+                                                       "key":  "ui1",
+                                                       "kind":  "cards",
+                                                       "act":  2,
+                                                       "count":  3
+                                                   }
+                                               ]
+                              }
+                },
+                {
+                    "id":  "op-mublqzdq-2",
+                    "kind":  "animate",
+                    "target":  "#lab-scene-orb1",
+                    "properties":  {
+                                       "scale":  [
+                                                     1,
+                                                     1.07,
+                                                     1
+                                                 ]
+                                   },
+                    "options":  {
+                                    "duration":  900
+                                }
+                },
+                {
+                    "id":  "op-mublqzdy-3",
+                    "kind":  "animate",
+                    "target":  "#lab-scene-orb1 .lab-orb-dot",
+                    "properties":  {
+                                       "scale":  [
+                                                     1,
+                                                     0
+                                                 ],
+                                       "opacity":  [
+                                                       1,
+                                                       0
+                                                   ]
+                                   },
+                    "options":  {
+                                    "duration":  500,
+                                    "delay":  1300,
+                                    "stagger":  8,
+                                    "staggerFrom":  "center"
+                                }
+                },
+                {
+                    "id":  "op-mublqze4-4",
+                    "kind":  "animate",
+                    "target":  "#lab-scene-ui1 .lab-scene-card",
+                    "properties":  {
+                                       "y":  [
+                                                 28,
+                                                 0
+                                             ],
+                                       "opacity":  [
+                                                       0,
+                                                       1
+                                                   ]
+                                   },
+                    "options":  {
+                                    "duration":  600,
+                                    "delay":  1500,
+                                    "stagger":  120,
+                                    "staggerFrom":  "center"
+                                }
+                },
+                {
+                    "id":  "op-mublqzec-5",
+                    "kind":  "animate",
+                    "target":  "#lab-scene-orb1",
+                    "properties":  {
+                                       "y":  [
+                                                 0,
+                                                 20
+                                             ],
+                                       "opacity":  [
+                                                       1,
+                                                       0
+                                                   ]
+                                   },
+                    "options":  {
+                                    "duration":  500,
+                                    "delay":  1500,
+                                    "staggerFrom":  "center"
+                                }
+                }
+            ]
+}

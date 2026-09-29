@@ -1,0 +1,190 @@
+{
+  "revision": 8,
+  "updatedAt": "2026-09-29T22:28:29.235Z",
+  "ops": [
+    {
+      "id": "scene-plan-mun8zsmd-14",
+      "kind": "scene",
+      "scene": {
+        "elements": [
+          {
+            "key": "pl-crm-1",
+            "act": 1,
+            "kind": "crm",
+            "rows": [
+              [
+                "Acme Corp",
+                "J. Doe",
+                "NEW",
+                "2d"
+              ],
+              [
+                "Globex",
+                "A. Smith",
+                "REPLIED",
+                "1d"
+              ],
+              [
+                "Initech",
+                "B. Jones",
+                "FOLLOW-UP",
+                "3h"
+              ]
+            ]
+          },
+          {
+            "key": "pl-notebook-2",
+            "act": 2,
+            "kind": "notebook",
+            "text": "CONTEXT"
+          },
+          {
+            "key": "pl-workflow-3",
+            "act": 3,
+            "kind": "workflow"
+          }
+        ]
+      }
+    },
+    {
+      "id": "op-plan-mun8zsmd-8",
+      "kind": "animate",
+      "target": "#lab-scene-pl-crm-1",
+      "properties": {
+        "y": {
+          "0": 4,
+          "1": 0,
+          "0.11": 0,
+          "0.85": 0
+        },
+        "opacity": {
+          "0": 0,
+          "1": 0,
+          "0.11": 1,
+          "0.85": 1
+        },
+        "scale": {
+          "0": 1,
+          "1": 0.985,
+          "0.11": 1,
+          "0.85": 1
+        }
+      },
+      "options": {
+        "delay": 0,
+        "duration": 6200,
+        "easing": "waves-entrance"
+      }
+    },
+    {
+      "id": "cascade-plan-mun8zsmd-9",
+      "kind": "animate",
+      "target": "#lab-scene-pl-crm-1 .lab-reveal",
+      "properties": {
+        "y": [
+          4,
+          0
+        ],
+        "opacity": [
+          0,
+          1
+        ]
+      },
+      "options": {
+        "delay": 341,
+        "duration": 600,
+        "easing": "waves-entrance",
+        "stagger": 80,
+        "staggerFrom": "first"
+      }
+    },
+    {
+      "id": "op-plan-mun8zsmd-10",
+      "kind": "animate",
+      "target": "#lab-scene-pl-notebook-2",
+      "properties": {
+        "opacity": {
+          "0": 0,
+          "1": 0,
+          "0.11": 1,
+          "0.85": 1
+        }
+      },
+      "options": {
+        "delay": 5000,
+        "duration": 6200,
+        "easing": "waves-entrance"
+      }
+    },
+    {
+      "id": "cascade-plan-mun8zsmd-11",
+      "kind": "animate",
+      "target": "#lab-scene-pl-notebook-2 .lab-reveal",
+      "properties": {
+        "opacity": [
+          0,
+          1
+        ]
+      },
+      "options": {
+        "delay": 5341,
+        "duration": 600,
+        "easing": "waves-entrance",
+        "stagger": 80,
+        "staggerFrom": "first"
+      }
+    },
+    {
+      "id": "op-plan-mun8zsmd-12",
+      "kind": "animate",
+      "target": "#lab-scene-pl-workflow-3",
+      "properties": {
+        "y": {
+          "0": 12,
+          "1": 0,
+          "0.14": 0,
+          "0.95": 0
+        },
+        "opacity": {
+          "0": 0,
+          "1": 0,
+          "0.14": 1,
+          "0.95": 1
+        },
+        "scale": {
+          "0": 1,
+          "1": 0.985,
+          "0.14": 1,
+          "0.95": 1
+        }
+      },
+      "options": {
+        "delay": 10000,
+        "duration": 5000,
+        "easing": "waves-entrance"
+      }
+    },
+    {
+      "id": "cascade-plan-mun8zsmd-13",
+      "kind": "animate",
+      "target": "#lab-scene-pl-workflow-3 .lab-reveal",
+      "properties": {
+        "y": [
+          12,
+          0
+        ],
+        "opacity": [
+          0,
+          1
+        ]
+      },
+      "options": {
+        "delay": 10350,
+        "duration": 600,
+        "easing": "waves-entrance",
+        "stagger": 80,
+        "staggerFrom": "first"
+      }
+    }
+  ]
+}

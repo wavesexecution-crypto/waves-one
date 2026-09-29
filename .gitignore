@@ -1,0 +1,24 @@
+node_modules/
+dist/
+.turbo/
+coverage/
+*.log
+.motion-recording/
+.DS_Store
+.env
+# AI Motion generated media (sources, outputs) — runtime artifacts only.
+apps/motion-lab/public/ai-motion/
+apps/motion-lab/.motion/ai-motion/
+# Motion Lab local runtime state (DB, voiceovers, exports, logs).
+# Kept: .motion/gsap/*.json (spec sources), .motion/animations/ (library),
+# public/gsap-state.json + public/motion-state.json (default live mirrors).
+apps/motion-lab/.motion/motion.db*
+apps/motion-lab/.motion/history.jsonl
+apps/motion-lab/.motion/state.json
+apps/motion-lab/.motion/techniques.json
+apps/motion-lab/.motion/voiceovers/
+apps/motion-lab/.motion/assets/
+apps/motion-lab/.motion/briefs/
+apps/motion-lab/.motion/references/
+apps/motion-lab/public/exports/
+apps/motion-lab/dist/

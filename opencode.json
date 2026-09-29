@@ -1,0 +1,10 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "waves-motion-lab": {
+      "type": "local",
+      "command": ["node", "packages/motion-lab-mcp/dist/server.mjs"],
+      "enabled": true
+    }
+  }
+}

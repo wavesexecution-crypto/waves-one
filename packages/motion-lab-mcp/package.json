@@ -1,0 +1,34 @@
+{
+  "name": "motion-lab-mcp",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Waves Motion Lab MCP Server - intent-level AI control surface over the @waves/motion engine.",
+  "license": "UNLICENSED",
+  "bin": {
+    "motion-lab-mcp": "./dist/server.mjs"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/server.d.ts",
+      "import": "./dist/server.mjs"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "lint": "tsc --noEmit -p tsconfig.json",
+    "test": "node test/flow.mjs && node test/backend.mjs && node test/golden.mjs && node test/ai-motion.mjs && node test/gsap-motion.mjs"
+  },
+  "dependencies": {
+    "@waves/motion": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0"
+  }
+}

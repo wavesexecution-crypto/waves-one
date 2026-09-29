@@ -1,0 +1,40 @@
+{
+  "name": "waves-motion",
+  "version": "1.0.0",
+  "private": true,
+  "packageManager": "pnpm@11.18.0",
+  "description": "Waves Motion Engine - internal animation system for the Waves ecosystem (@waves/motion).",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "build": "pnpm --filter @waves/motion build && pnpm --filter motion-lab-mcp build && pnpm --filter motion-lab build",
+    "build:engine": "pnpm --filter @waves/motion build",
+    "build:mcp": "pnpm --filter motion-lab-mcp build",
+    "build:lab": "pnpm --filter motion-lab build",
+    "dev:lab": "pnpm --filter motion-lab dev",
+    "mcp": "pnpm --filter motion-lab-mcp build && node packages/motion-lab-mcp/dist/server.mjs",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:mcp": "pnpm --filter motion-lab-mcp test",
+    "test:export": "pnpm --filter motion-lab test:export",
+    "test:shell": "pnpm --filter motion-lab test:shell",
+    "export:film": "pnpm --filter motion-lab export:film",
+    "typecheck": "pnpm --filter @waves/motion typecheck && pnpm --filter motion-lab-mcp typecheck && pnpm --filter motion-lab typecheck",
+    "typecheck:engine": "pnpm --filter @waves/motion typecheck",
+    "typecheck:mcp": "pnpm --filter motion-lab-mcp typecheck",
+    "typecheck:lab": "pnpm --filter motion-lab typecheck",
+    "lint": "pnpm --filter @waves/motion lint && pnpm --filter motion-lab-mcp lint && pnpm --filter motion-lab lint"
+  },
+  "devDependencies": {
+    "@types/jsdom": "^21.1.7",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "jsdom": "^25.0.1",
+    "tsup": "^8.3.5",
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.8"
+  }
+}

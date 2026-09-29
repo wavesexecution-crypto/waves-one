@@ -1,0 +1,30 @@
+{
+  "name": "motion-lab",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Waves Motion Lab - the internal demo + authoring environment for @waves/motion.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview --port 5176",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "lint": "tsc --noEmit -p tsconfig.json",
+    "test:export": "node test/export.mjs",
+    "test:shell": "node shellcheck.mjs",
+    "export:film": "node scripts/export-film.mjs"
+  },
+  "dependencies": {
+    "@waves/motion": "workspace:*",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "playwright-core": "^1.63.0",
+    "typescript": "^5.7.0",
+    "vite": "^6.0.7"
+  }
+}

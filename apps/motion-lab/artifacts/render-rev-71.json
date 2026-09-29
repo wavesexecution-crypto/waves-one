@@ -1,0 +1,17 @@
+{
+  "rev": 71,
+  "projectId": "project_default",
+  "format": "mp4",
+  "orientation": "landscape",
+  "opCount": 7,
+  "elementCount": 3,
+  "durationMs": 20000,
+  "overlaps": [],
+  "validation": {
+    "ok": true,
+    "errorCount": 0,
+    "warningCount": 2
+  },
+  "artifact": "D:\\waves-motion\\apps\\motion-lab\\artifacts\\render-rev-71.json",
+  "completedAt": "2026-09-29T06:44:55.587Z"
+}

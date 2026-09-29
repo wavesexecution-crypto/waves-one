@@ -1,0 +1,205 @@
+/*
+ * GSAP workspace — Motion Lab visual language: black, hairlines,
+ * monospace precision. The hero owns the viewport; chrome whispers.
+ */
+
+.gsap-root {
+  min-height: 100vh;
+  min-height: 100dvh;
+  background: #000;
+  color: #d4d4d8;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  padding: clamp(20px, 4vw, 48px);
+  max-width: 1280px;
+  margin: 0 auto;
+}
+
+.gsap-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: flex-end;
+  justify-content: space-between;
+  border-bottom: 1px solid #27272a;
+  padding-bottom: 18px;
+  margin-bottom: 24px;
+}
+
+.gsap-eyebrow {
+  display: block;
+  font-size: 11px;
+  letter-spacing: 0.28em;
+  color: #71717a;
+  margin-bottom: 8px;
+}
+
+.gsap-head h1 {
+  margin: 0;
+  font-size: clamp(20px, 3vw, 28px);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: #fafafa;
+}
+
+.gsap-transport {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.gsap-state {
+  font-size: 10px;
+  letter-spacing: 0.24em;
+  border: 1px solid #3f3f46;
+  padding: 7px 12px;
+  color: #8e8e96;
+  margin-right: 6px;
+}
+
+.gsap-state-playing {
+  color: #fafafa;
+  border-color: #fafafa;
+}
+
+.gsap-state-completed {
+  color: #52525b;
+}
+
+.gsap-btn {
+  background: transparent;
+  border: 1px solid #3f3f46;
+  color: #e4e4e7;
+  font: inherit;
+  font-size: 12px;
+  padding: 7px 12px;
+  cursor: pointer;
+  border-radius: 2px;
+}
+
+.gsap-btn:hover {
+  border-color: #fafafa;
+  color: #fafafa;
+}
+
+.gsap-time {
+  font-size: 11px;
+  color: #8e8e96;
+  margin-left: 6px;
+  white-space: nowrap;
+}
+
+.gsap-note {
+  font-size: 11px;
+  color: #8e8e96;
+  border: 1px solid #27272a;
+  padding: 8px 12px;
+  margin-bottom: 16px;
+  line-height: 1.6;
+}
+
+.gsap-empty {
+  font-size: 12px;
+  color: #63636b;
+  margin-top: 16px;
+}
+
+.gsap-empty code {
+  color: #a1a1aa;
+}
+
+/* OBSIDIAN HERO scene — editorial monochrome, restrained. */
+
+.gsap-stage {
+  position: relative;
+  border: 1px solid #27272a;
+  background: #050506;
+  min-height: min(72vh, 640px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  padding: 48px 24px;
+}
+
+.ob-bg {
+  position: absolute;
+  inset: -10%;
+  background: radial-gradient(ellipse 60% 50% at 50% 45%, #101013 0%, #050506 70%);
+}
+
+.ob-frame {
+  position: relative;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  max-width: 720px;
+}
+
+.ob-eyebrow {
+  font-size: 11px;
+  letter-spacing: 0.34em;
+  text-indent: 0.34em;
+  color: #71717a;
+}
+
+.ob-title {
+  margin: 0;
+  font-size: clamp(56px, 10vw, 128px);
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  line-height: 1;
+  color: #fafafa;
+}
+
+.ob-sub {
+  margin: 0;
+  font-size: clamp(14px, 2vw, 19px);
+  letter-spacing: 0.06em;
+  color: #a1a1aa;
+}
+
+.ob-visual {
+  position: relative;
+  width: 120px;
+  height: 120px;
+  margin-top: 10px;
+}
+
+.ob-ring {
+  position: absolute;
+  inset: 0;
+  border: 1px solid #2b2b30;
+  border-radius: 50%;
+}
+
+.ob-ring-2 {
+  inset: 18px;
+  border-color: #1c1c1f;
+}
+
+.ob-orb {
+  position: absolute;
+  inset: 44px;
+  border-radius: 50%;
+  background: #e4e4e7;
+}
+
+.ob-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 22px;
+  justify-content: center;
+  margin-top: 12px;
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  color: #52525b;
+}
+
+@media (max-width: 640px) {
+  .gsap-head {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}

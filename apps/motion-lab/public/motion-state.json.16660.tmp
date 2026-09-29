@@ -1,0 +1,46 @@
+{
+  "revision": 3,
+  "updatedAt": "2026-09-18T21:14:37.194Z",
+  "ops": [
+    {
+      "id": "scene-mu7gifhv-1",
+      "kind": "scene",
+      "scene": {
+        "elements": [
+          {
+            "key": "cards",
+            "kind": "cards",
+            "count": 3
+          }
+        ]
+      }
+    },
+    {
+      "id": "op-mu7gifhv-2",
+      "kind": "animate",
+      "target": ".lab-scene-card",
+      "properties": {
+        "y": [
+          12,
+          0
+        ],
+        "opacity": [
+          0,
+          1
+        ]
+      },
+      "options": {
+        "origin": "rise",
+        "easing": "waves-spring",
+        "spring": {
+          "stiffness": 120,
+          "damping": 26,
+          "mass": 1.2,
+          "restDelta": 0.02,
+          "restSpeed": 0.2
+        },
+        "stagger": 150
+      }
+    }
+  ]
+}

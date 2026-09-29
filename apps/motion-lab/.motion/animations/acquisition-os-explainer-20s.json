@@ -1,0 +1,502 @@
+{
+  "name": "acquisition-os-explainer-20s",
+  "description": "Cinematic 20-second Acquisition OS explainer: context, prospects, outreach, approval, deployment, milestones, report. Grayscale, house physics, no loops.",
+  "choreography": {
+    "acts": "title 0-2.5s, context 2.5-5s, network 5-8s, pipeline 8-11s, deploy 11-14.5s, milestones 14.5-17.5s, finale 17.5-20.05s",
+    "pattern": "one op per mount (multi-keyframe enter-hold-exit) so overlapping delays never fight over start states",
+    "physics": "bezier entrances/exits on mounts, waves-spring reveals, snappy approval pop",
+    "end": "finale holds to 20050ms so export covers the full 20s"
+  },
+  "ops": [
+    {
+      "id": "scene-ao-1",
+      "kind": "scene",
+      "scene": {
+        "elements": [
+          {
+            "key": "ao-title",
+            "kind": "title",
+            "act": 1,
+            "eyebrow": "WAVES",
+            "text": "ACQUISITION OS",
+            "sub": "Choose. Rent. Operate."
+          },
+          {
+            "key": "ao-context",
+            "kind": "flow",
+            "act": 2,
+            "text": "YOUR CONTEXT",
+            "items": [
+              "CONTEXT",
+              "MARKET",
+              "AUDIENCE",
+              "CRITERIA"
+            ],
+            "caption": "Give it your context."
+          },
+          {
+            "key": "ao-network",
+            "kind": "network",
+            "act": 3,
+            "count": 120,
+            "highlight": [
+              5,
+              12,
+              23,
+              31,
+              44,
+              52,
+              67,
+              74,
+              88,
+              95,
+              104,
+              111,
+              17,
+              58
+            ],
+            "caption": "Find the right prospects."
+          },
+          {
+            "key": "ao-pipeline",
+            "kind": "pipeline",
+            "act": 4,
+            "items": [
+              "PROSPECT",
+              "OUTREACH",
+              "REVIEW"
+            ],
+            "caption": "AI prepares the outreach.",
+            "caption2": "You approve the deployment."
+          },
+          {
+            "key": "ao-deploy",
+            "kind": "stages",
+            "act": 5,
+            "items": [
+              "DEPLOY",
+              "REPLIES",
+              "FOLLOW-UP"
+            ]
+          },
+          {
+            "key": "ao-ms",
+            "kind": "milestones",
+            "act": 6,
+            "count": 3
+          },
+          {
+            "key": "ao-finale",
+            "kind": "title",
+            "act": 7,
+            "large": true,
+            "eyebrow": "WAVES",
+            "text": "ACQUISITION OS",
+            "sub": "Choose. Rent. Operate."
+          }
+        ]
+      }
+    },
+    {
+      "id": "op-ao-a1",
+      "kind": "animate",
+      "target": "#lab-scene-ao-title",
+      "properties": {
+        "y": {
+          "0": 20,
+          "1": -12,
+          "0.19": 0,
+          "0.81": 0
+        },
+        "opacity": {
+          "0": 0,
+          "1": 0,
+          "0.19": 1,
+          "0.81": 1
+        }
+      },
+      "options": {
+        "delay": 150,
+        "duration": 2350,
+        "easing": "waves-entrance"
+      }
+    },
+    {
+      "id": "op-ao-a2",
+      "kind": "animate",
+      "target": "#lab-scene-ao-context",
+      "properties": {
+        "y": {
+          "0": 16,
+          "1": -12,
+          "0.18": 0,
+          "0.82": 0
+        },
+        "opacity": {
+          "0": 0,
+          "1": 0,
+          "0.18": 1,
+          "0.82": 1
+        }
+      },
+      "options": {
+        "delay": 2500,
+        "duration": 2500,
+        "easing": "waves-entrance"
+      }
+    },
+    {
+      "id": "op-ao-a3",
+      "kind": "animate",
+      "target": "#lab-scene-ao-network",
+      "properties": {
+        "y": {
+          "0": 16,
+          "1": -12,
+          "0.15": 0,
+          "0.85": 0
+        },
+        "opacity": {
+          "0": 0,
+          "1": 0,
+          "0.15": 1,
+          "0.85": 1
+        }
+      },
+      "options": {
+        "delay": 5000,
+        "duration": 3000,
+        "easing": "waves-entrance"
+      }
+    },
+    {
+      "id": "op-ao-a4",
+      "kind": "animate",
+      "target": "#lab-scene-ao-pipeline",
+      "properties": {
+        "y": {
+          "0": 16,
+          "1": -12,
+          "0.15": 0,
+          "0.85": 0
+        },
+        "opacity": {
+          "0": 0,
+          "1": 0,
+          "0.15": 1,
+          "0.85": 1
+        }
+      },
+      "options": {
+        "delay": 8000,
+        "duration": 3000,
+        "easing": "waves-entrance"
+      }
+    },
+    {
+      "id": "op-ao-a5",
+      "kind": "animate",
+      "target": "#lab-scene-ao-deploy",
+      "properties": {
+        "y": {
+          "0": 16,
+          "1": -12,
+          "0.13": 0,
+          "0.87": 0
+        },
+        "opacity": {
+          "0": 0,
+          "1": 0,
+          "0.13": 1,
+          "0.87": 1
+        }
+      },
+      "options": {
+        "delay": 11000,
+        "duration": 3500,
+        "easing": "waves-entrance"
+      }
+    },
+    {
+      "id": "op-ao-a6",
+      "kind": "animate",
+      "target": "#lab-scene-ao-ms",
+      "properties": {
+        "y": {
+          "0": 16,
+          "1": -12,
+          "0.15": 0,
+          "0.85": 0
+        },
+        "opacity": {
+          "0": 0,
+          "1": 0,
+          "0.15": 1,
+          "0.85": 1
+        }
+      },
+      "options": {
+        "delay": 14500,
+        "duration": 3000,
+        "easing": "waves-entrance"
+      }
+    },
+    {
+      "id": "op-ao-a7",
+      "kind": "animate",
+      "target": "#lab-scene-ao-finale",
+      "properties": {
+        "y": {
+          "0": 24,
+          "1": 0,
+          "0.2": 0
+        },
+        "opacity": {
+          "0": 0,
+          "1": 1,
+          "0.2": 1
+        }
+      },
+      "options": {
+        "delay": 17500,
+        "duration": 2550,
+        "easing": "waves-entrance"
+      }
+    },
+    {
+      "id": "op-ao-a2-stages",
+      "kind": "animate",
+      "target": "#lab-scene-ao-context .lab-stage-name",
+      "properties": {
+        "y": [
+          10,
+          0
+        ],
+        "opacity": [
+          0,
+          1
+        ]
+      },
+      "options": {
+        "delay": 2900,
+        "duration": 400,
+        "easing": "waves-entrance",
+        "stagger": 130,
+        "staggerFrom": "first"
+      }
+    },
+    {
+      "id": "op-ao-a3-dots",
+      "kind": "animate",
+      "target": "#lab-scene-ao-network .lab-net-dot",
+      "properties": {
+        "opacity": [
+          0,
+          1
+        ]
+      },
+      "options": {
+        "delay": 5400,
+        "duration": 350,
+        "easing": "waves-entrance",
+        "stagger": 12,
+        "staggerFrom": "first"
+      }
+    },
+    {
+      "id": "op-ao-a4-stages",
+      "kind": "animate",
+      "target": "#lab-scene-ao-pipeline .lab-stage-name",
+      "properties": {
+        "y": [
+          10,
+          0
+        ],
+        "opacity": [
+          0,
+          1
+        ]
+      },
+      "options": {
+        "delay": 8300,
+        "duration": 400,
+        "easing": "waves-entrance",
+        "stagger": 120,
+        "staggerFrom": "first"
+      }
+    },
+    {
+      "id": "op-ao-a4-mail",
+      "kind": "animate",
+      "target": "#lab-scene-ao-pipeline .lab-mail",
+      "properties": {
+        "y": [
+          14,
+          0
+        ],
+        "opacity": [
+          0,
+          1
+        ]
+      },
+      "options": {
+        "delay": 8600,
+        "easing": "waves-spring",
+        "spring": {
+          "stiffness": 210,
+          "damping": 29,
+          "mass": 1
+        }
+      }
+    },
+    {
+      "id": "op-ao-a4-badge",
+      "kind": "animate",
+      "target": "#lab-scene-ao-pipeline .lab-badge",
+      "properties": {
+        "scale": [
+          0.94,
+          1
+        ],
+        "opacity": [
+          0,
+          1
+        ]
+      },
+      "options": {
+        "delay": 9600,
+        "duration": 420,
+        "easing": "waves-spring",
+        "spring": {
+          "stiffness": 420,
+          "damping": 34,
+          "mass": 1
+        }
+      }
+    },
+    {
+      "id": "op-ao-a5-stages",
+      "kind": "animate",
+      "target": "#lab-scene-ao-deploy .lab-stage-name",
+      "properties": {
+        "y": [
+          10,
+          0
+        ],
+        "opacity": [
+          0,
+          1
+        ]
+      },
+      "options": {
+        "delay": 11300,
+        "duration": 400,
+        "easing": "waves-entrance",
+        "stagger": 120,
+        "staggerFrom": "first"
+      }
+    },
+    {
+      "id": "op-ao-a5-replies",
+      "kind": "animate",
+      "target": "#lab-scene-ao-deploy .lab-rep-dot",
+      "properties": {
+        "opacity": [
+          0,
+          1
+        ]
+      },
+      "options": {
+        "delay": 11800,
+        "duration": 300,
+        "easing": "waves-entrance",
+        "stagger": 110,
+        "staggerFrom": "first"
+      }
+    },
+    {
+      "id": "op-ao-a5-follow",
+      "kind": "animate",
+      "target": "#lab-scene-ao-deploy .lab-follow-card",
+      "properties": {
+        "y": [
+          12,
+          0
+        ],
+        "opacity": [
+          0,
+          1
+        ]
+      },
+      "options": {
+        "delay": 12700,
+        "duration": 450,
+        "easing": "waves-entrance",
+        "stagger": 140,
+        "staggerFrom": "first"
+      }
+    },
+    {
+      "id": "op-ao-a6-rows",
+      "kind": "animate",
+      "target": "#lab-scene-ao-ms .lab-ms-row",
+      "properties": {
+        "y": [
+          10,
+          0
+        ],
+        "opacity": [
+          0,
+          1
+        ]
+      },
+      "options": {
+        "delay": 14900,
+        "duration": 400,
+        "easing": "waves-entrance",
+        "stagger": 160,
+        "staggerFrom": "first"
+      }
+    },
+    {
+      "id": "op-ao-a6-bar",
+      "kind": "animate",
+      "target": "#lab-scene-ao-ms .lab-bar-fill",
+      "properties": {
+        "scaleX": [
+          0,
+          1
+        ]
+      },
+      "options": {
+        "delay": 15600,
+        "duration": 1100,
+        "easing": "waves-standard"
+      }
+    },
+    {
+      "id": "op-ao-a6-report",
+      "kind": "animate",
+      "target": "#lab-scene-ao-ms .lab-report",
+      "properties": {
+        "y": [
+          14,
+          0
+        ],
+        "opacity": [
+          0,
+          1
+        ]
+      },
+      "options": {
+        "delay": 16400,
+        "easing": "waves-spring",
+        "spring": {
+          "stiffness": 210,
+          "damping": 29,
+          "mass": 1
+        }
+      }
+    }
+  ]
+}

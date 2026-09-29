@@ -1,0 +1,67 @@
+{
+  "name": "premium-hero",
+  "description": "Premium WAVES hero: title rises on the house spring, three cards enter sequentially from below on a restrained deliberate spring. Settles still, no loop.",
+  "sourceRevision": 3,
+  "savedAt": "2026-09-18T20:42:47.169Z",
+  "choreography": {
+    "hero": "y [24,0] + opacity [0,1], waves-spring k=210/d=29/m=1, starts at t=0",
+    "cards": "y [24,0] + opacity [0,1], waves-spring k=120/d=26/m=1.2, delay 120ms, stagger 140ms from first"
+  },
+  "ops": [
+    {
+      "id": "scene-mu7fdhpj-1",
+      "kind": "scene",
+      "scene": {
+        "elements": [
+          {
+            "key": "hero",
+            "kind": "hero",
+            "count": 3,
+            "text": "Motion, engineered."
+          }
+        ]
+      }
+    },
+    {
+      "id": "op-mu7fdhpj-2",
+      "kind": "animate",
+      "target": "#lab-scene-hero .lab-scene-title",
+      "properties": {
+        "y": [24, 0],
+        "opacity": [0, 1]
+      },
+      "options": {
+        "easing": "waves-spring",
+        "spring": {
+          "stiffness": 210,
+          "damping": 29,
+          "mass": 1,
+          "restDelta": 0.02,
+          "restSpeed": 0.25
+        }
+      }
+    },
+    {
+      "id": "op-mu7fdhps-3",
+      "kind": "animate",
+      "target": "#lab-scene-hero .lab-scene-card",
+      "properties": {
+        "y": [24, 0],
+        "opacity": [0, 1]
+      },
+      "options": {
+        "delay": 120,
+        "easing": "waves-spring",
+        "spring": {
+          "stiffness": 120,
+          "damping": 26,
+          "mass": 1.2,
+          "restDelta": 0.02,
+          "restSpeed": 0.2
+        },
+        "stagger": 140,
+        "staggerFrom": "first"
+      }
+    }
+  ]
+}

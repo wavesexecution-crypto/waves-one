@@ -1,0 +1,423 @@
+{
+  "name": "waves-acquisition-story",
+  "description": "WAVES visual story: orb intelligence, CRM, notebook, workflow, finale. Every state emerges from and returns to the orb. Grayscale, house physics, no loops.",
+  "choreography": {
+    "rhythm": "ORB → STATE → ORB per beat; persistent orb mount, dispersing/reforming dots",
+    "acts": "intel 0.2-2.6s, crm 3-6.5s, notebook 10-12.9s, workflow 16-18.9s, finale 19-20.05s",
+    "pattern": "one op per mount (multi-keyframe enter-hold-exit); cascades on child targets",
+    "end": "finale holds to 20050ms so export covers the full 20s"
+  },
+  "ops": [
+    {
+      "id": "scene-ao-s-1",
+      "kind": "scene",
+      "scene": {
+        "elements": [
+          {
+            "key": "st-orb",
+            "kind": "orb",
+            "count": 72
+          },
+          {
+            "key": "st-intel",
+            "kind": "text",
+            "act": 1,
+            "text": "INTELLIGENCE"
+          },
+          {
+            "key": "st-crm",
+            "kind": "crm",
+            "act": 2
+          },
+          {
+            "key": "st-notebook",
+            "kind": "notebook",
+            "act": 3,
+            "text": "CONTEXT"
+          },
+          {
+            "key": "st-workflow",
+            "kind": "workflow",
+            "act": 4
+          },
+          {
+            "key": "st-waves",
+            "kind": "title",
+            "act": 5,
+            "large": true,
+            "eyebrow": "",
+            "text": "WAVES",
+            "sub": "Choose. Rent. Operate."
+          }
+        ]
+      }
+    },
+    {
+      "id": "op-ao-s-intel",
+      "kind": "animate",
+      "target": "#lab-scene-st-intel",
+      "properties": {
+        "y": {
+          "0": 8,
+          "1": -8,
+          "0.2": 0,
+          "0.8": 0
+        },
+        "opacity": {
+          "0": 0,
+          "1": 0,
+          "0.2": 1,
+          "0.8": 1
+        }
+      },
+      "options": {
+        "delay": 200,
+        "duration": 2400,
+        "easing": "waves-entrance"
+      }
+    },
+    {
+      "id": "op-ao-s-pulse1",
+      "kind": "animate",
+      "target": "#lab-scene-st-orb",
+      "properties": {
+        "scale": [
+          1,
+          1.06,
+          1
+        ]
+      },
+      "options": {
+        "delay": 200,
+        "duration": 1200,
+        "easing": "waves-standard"
+      }
+    },
+    {
+      "id": "op-ao-s-disp1",
+      "kind": "animate",
+      "target": "#lab-scene-st-orb .lab-orb-dot",
+      "properties": {
+        "scale": [
+          1,
+          0
+        ],
+        "opacity": [
+          1,
+          0
+        ]
+      },
+      "options": {
+        "delay": 2600,
+        "duration": 500,
+        "easing": "waves-exit",
+        "stagger": 8,
+        "staggerFrom": "center"
+      }
+    },
+    {
+      "id": "op-ao-s-crm",
+      "kind": "animate",
+      "target": "#lab-scene-st-crm",
+      "properties": {
+        "y": {
+          "0": 24,
+          "1": -12,
+          "0.14": 0,
+          "0.87": 0
+        },
+        "opacity": {
+          "0": 0,
+          "1": 0,
+          "0.14": 1,
+          "0.87": 1
+        }
+      },
+      "options": {
+        "delay": 3000,
+        "duration": 3500,
+        "easing": "waves-entrance"
+      }
+    },
+    {
+      "id": "op-ao-s-crm-rows",
+      "kind": "animate",
+      "target": "#lab-scene-st-crm .lab-crm-row",
+      "properties": {
+        "y": [
+          10,
+          0
+        ],
+        "opacity": [
+          0,
+          1
+        ]
+      },
+      "options": {
+        "delay": 3300,
+        "duration": 400,
+        "easing": "waves-entrance",
+        "stagger": 90,
+        "staggerFrom": "first"
+      }
+    },
+    {
+      "id": "op-ao-s-reform1",
+      "kind": "animate",
+      "target": "#lab-scene-st-orb .lab-orb-dot",
+      "properties": {
+        "scale": [
+          0,
+          1
+        ],
+        "opacity": [
+          0,
+          1
+        ]
+      },
+      "options": {
+        "delay": 6600,
+        "duration": 500,
+        "easing": "waves-entrance",
+        "stagger": 8,
+        "staggerFrom": "center"
+      }
+    },
+    {
+      "id": "op-ao-s-pulse2",
+      "kind": "animate",
+      "target": "#lab-scene-st-orb",
+      "properties": {
+        "scale": [
+          1,
+          1.06,
+          1
+        ]
+      },
+      "options": {
+        "delay": 7100,
+        "duration": 1000,
+        "easing": "waves-standard"
+      }
+    },
+    {
+      "id": "op-ao-s-disp2",
+      "kind": "animate",
+      "target": "#lab-scene-st-orb .lab-orb-dot",
+      "properties": {
+        "scale": [
+          1,
+          0
+        ],
+        "opacity": [
+          1,
+          0
+        ]
+      },
+      "options": {
+        "delay": 9600,
+        "duration": 500,
+        "easing": "waves-exit",
+        "stagger": 8,
+        "staggerFrom": "center"
+      }
+    },
+    {
+      "id": "op-ao-s-nb",
+      "kind": "animate",
+      "target": "#lab-scene-st-notebook",
+      "properties": {
+        "y": {
+          "0": 24,
+          "1": -12,
+          "0.16": 0,
+          "0.84": 0
+        },
+        "opacity": {
+          "0": 0,
+          "1": 0,
+          "0.16": 1,
+          "0.84": 1
+        }
+      },
+      "options": {
+        "delay": 10000,
+        "duration": 2900,
+        "easing": "waves-entrance"
+      }
+    },
+    {
+      "id": "op-ao-s-nb-lines",
+      "kind": "animate",
+      "target": "#lab-scene-st-notebook .lab-nb-line",
+      "properties": {
+        "y": [
+          10,
+          0
+        ],
+        "opacity": [
+          0,
+          1
+        ]
+      },
+      "options": {
+        "delay": 10300,
+        "duration": 400,
+        "easing": "waves-entrance",
+        "stagger": 110,
+        "staggerFrom": "first"
+      }
+    },
+    {
+      "id": "op-ao-s-reform2",
+      "kind": "animate",
+      "target": "#lab-scene-st-orb .lab-orb-dot",
+      "properties": {
+        "scale": [
+          0,
+          1
+        ],
+        "opacity": [
+          0,
+          1
+        ]
+      },
+      "options": {
+        "delay": 13000,
+        "duration": 500,
+        "easing": "waves-entrance",
+        "stagger": 8,
+        "staggerFrom": "center"
+      }
+    },
+    {
+      "id": "op-ao-s-pulse3",
+      "kind": "animate",
+      "target": "#lab-scene-st-orb",
+      "properties": {
+        "scale": [
+          1,
+          1.06,
+          1
+        ]
+      },
+      "options": {
+        "delay": 13500,
+        "duration": 1000,
+        "easing": "waves-standard"
+      }
+    },
+    {
+      "id": "op-ao-s-disp3",
+      "kind": "animate",
+      "target": "#lab-scene-st-orb .lab-orb-dot",
+      "properties": {
+        "scale": [
+          1,
+          0
+        ],
+        "opacity": [
+          1,
+          0
+        ]
+      },
+      "options": {
+        "delay": 15600,
+        "duration": 500,
+        "easing": "waves-exit",
+        "stagger": 8,
+        "staggerFrom": "center"
+      }
+    },
+    {
+      "id": "op-ao-s-wf",
+      "kind": "animate",
+      "target": "#lab-scene-st-workflow",
+      "properties": {
+        "y": {
+          "0": 24,
+          "1": -12,
+          "0.16": 0,
+          "0.84": 0
+        },
+        "opacity": {
+          "0": 0,
+          "1": 0,
+          "0.16": 1,
+          "0.84": 1
+        }
+      },
+      "options": {
+        "delay": 16000,
+        "duration": 2900,
+        "easing": "waves-entrance"
+      }
+    },
+    {
+      "id": "op-ao-s-wf-nodes",
+      "kind": "animate",
+      "target": "#lab-scene-st-workflow .lab-wf-node",
+      "properties": {
+        "y": [
+          10,
+          0
+        ],
+        "opacity": [
+          0,
+          1
+        ]
+      },
+      "options": {
+        "delay": 16300,
+        "duration": 400,
+        "easing": "waves-entrance",
+        "stagger": 130,
+        "staggerFrom": "first"
+      }
+    },
+    {
+      "id": "op-ao-s-reform3",
+      "kind": "animate",
+      "target": "#lab-scene-st-orb .lab-orb-dot",
+      "properties": {
+        "scale": [
+          0,
+          1
+        ],
+        "opacity": [
+          0,
+          1
+        ]
+      },
+      "options": {
+        "delay": 18600,
+        "duration": 500,
+        "easing": "waves-entrance",
+        "stagger": 8,
+        "staggerFrom": "center"
+      }
+    },
+    {
+      "id": "op-ao-s-waves",
+      "kind": "animate",
+      "target": "#lab-scene-st-waves",
+      "properties": {
+        "y": {
+          "0": 24,
+          "1": 0,
+          "0.45": 0
+        },
+        "opacity": {
+          "0": 0,
+          "1": 1,
+          "0.45": 1
+        }
+      },
+      "options": {
+        "delay": 19000,
+        "duration": 1050,
+        "easing": "waves-entrance"
+      }
+    }
+  ]
+}

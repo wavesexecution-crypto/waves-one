@@ -1,0 +1,140 @@
+{
+  "name": "obsidian-hero",
+  "description": "OBSIDIAN HERO — premium monochrome editorial hero: title reveal, subtitle, visual scale-in, meta stagger, ambient drift, restrained parallax.",
+  "spec": {
+    "version": 1,
+    "name": "obsidian-hero",
+    "description": "OBSIDIAN HERO — premium monochrome editorial hero: title reveal, subtitle, visual scale-in, meta stagger, ambient drift, restrained parallax.",
+    "ops": [
+      {
+        "id": "s-title",
+        "type": "set",
+        "target": ".ob-title",
+        "to": {
+          "opacity": 0,
+          "y": 60
+        }
+      },
+      {
+        "id": "s-sub",
+        "type": "set",
+        "target": ".ob-sub",
+        "to": {
+          "opacity": 0,
+          "y": 24
+        }
+      },
+      {
+        "id": "s-visual",
+        "type": "set",
+        "target": ".ob-visual",
+        "to": {
+          "opacity": 0,
+          "scale": 0.94
+        }
+      },
+      {
+        "id": "eyebrow",
+        "type": "tween",
+        "target": ".ob-eyebrow",
+        "from": {
+          "opacity": 0
+        },
+        "to": {
+          "opacity": 1
+        },
+        "duration": 0.7,
+        "ease": "power2.out",
+        "position": 0
+      },
+      {
+        "id": "title",
+        "type": "tween",
+        "target": ".ob-title",
+        "to": {
+          "opacity": 1,
+          "y": 0
+        },
+        "duration": 0.9,
+        "ease": "power3.out",
+        "position": 0.15,
+        "label": "title-in"
+      },
+      {
+        "id": "sub",
+        "type": "tween",
+        "target": ".ob-sub",
+        "to": {
+          "opacity": 1,
+          "y": 0
+        },
+        "duration": 0.6,
+        "ease": "power3.out",
+        "position": 0.55
+      },
+      {
+        "id": "visual",
+        "type": "tween",
+        "target": ".ob-visual",
+        "to": {
+          "opacity": 1,
+          "scale": 1
+        },
+        "duration": 1.1,
+        "ease": "power2.out",
+        "position": 0.7
+      },
+      {
+        "id": "meta",
+        "type": "stagger",
+        "target": ".ob-meta span",
+        "from": {
+          "opacity": 0,
+          "y": 12
+        },
+        "to": {
+          "opacity": 1,
+          "y": 0
+        },
+        "duration": 0.5,
+        "ease": "power2.out",
+        "stagger": {
+          "each": 0.08,
+          "from": "first"
+        },
+        "position": 1.2
+      },
+      {
+        "id": "drift",
+        "type": "tween",
+        "target": ".ob-orb",
+        "to": {
+          "y": -10
+        },
+        "duration": 7,
+        "ease": "sine.inOut",
+        "position": 2.2,
+        "ambient": true
+      },
+      {
+        "id": "parallax-bg",
+        "type": "parallax",
+        "target": ".ob-bg",
+        "speed": 0.15
+      },
+      {
+        "id": "scroll-frame",
+        "type": "scroll",
+        "target": ".ob-frame",
+        "from": {
+          "y": 0
+        },
+        "to": {
+          "y": -40
+        },
+        "scrub": true
+      }
+    ]
+  },
+  "updatedAt": "2026-09-29T22:15:00.112Z"
+}

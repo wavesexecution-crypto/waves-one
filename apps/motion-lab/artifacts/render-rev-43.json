@@ -1,0 +1,17 @@
+{
+  "rev": 43,
+  "projectId": "project_default",
+  "format": "mp4",
+  "orientation": "vertical",
+  "opCount": 4,
+  "elementCount": 2,
+  "durationMs": 14000,
+  "overlaps": [],
+  "validation": {
+    "ok": true,
+    "errorCount": 0,
+    "warningCount": 2
+  },
+  "artifact": "D:\\waves-motion\\apps\\motion-lab\\artifacts\\render-rev-43.json",
+  "completedAt": "2026-09-23T05:19:39.868Z"
+}

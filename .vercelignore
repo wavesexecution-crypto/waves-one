@@ -1,0 +1,7 @@
+# Runtime outputs and local dev state — never uploaded to Vercel.
+# Kept: public/gsap-state.json + public/motion-state.json (default scenes).
+apps/motion-lab/public/exports
+apps/motion-lab/public/ai-motion
+apps/motion-lab/.motion
+scratch
+.playwright-mcp

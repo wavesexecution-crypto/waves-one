@@ -1,0 +1,20 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": ["node", "vite/client"],
+    "baseUrl": ".",
+    "paths": {
+      "@waves/motion": ["../../packages/motion/src/index.ts"],
+      "@waves/motion/presets": ["../../packages/motion/src/presets/index.ts"],
+      "@waves/motion/scroll": ["../../packages/motion/src/scroll/index.ts"],
+      "@waves/motion/timeline": ["../../packages/motion/src/timeline/index.ts"],
+      "@waves/motion/tokens": ["../../packages/motion/src/core/tokens.ts"],
+      "@waves/motion/spring": ["../../packages/motion/src/spring/index.ts"],
+      "@waves/motion/types": ["../../packages/motion/src/types/index.ts"],
+      "@lab/ops": ["../../packages/motion-lab-mcp/src/ops.ts"]
+    }
+  },
+  "include": ["src", "vite.config.ts", "vite.ai-motion.ts"]
+}
