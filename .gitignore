@@ -5,6 +5,9 @@ coverage/
 *.log
 .motion-recording/
 .DS_Store
+.playwright-mcp/
+scratch/
+vitest.json
 .env
 # AI Motion generated media (sources, outputs) — runtime artifacts only.
 apps/motion-lab/public/ai-motion/
@@ -22,3 +25,5 @@ apps/motion-lab/.motion/briefs/
 apps/motion-lab/.motion/references/
 apps/motion-lab/public/exports/
 apps/motion-lab/dist/
+.vercel
+.env*
