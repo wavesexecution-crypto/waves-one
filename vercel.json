@@ -1,6 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "pnpm --filter motion-lab build",
+  "buildCommand": "pnpm --filter @waves/motion build && pnpm --filter motion-lab build",
   "outputDirectory": "apps/motion-lab/dist",
   "installCommand": "pnpm install",
   "framework": "vite"
