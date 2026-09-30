@@ -1,6 +1,7 @@
 /*
- * GSAP workspace — Motion Lab visual language: black, hairlines,
- * monospace precision. The hero owns the viewport; chrome whispers.
+ * Motion Lab — GSAP workspace base. Black, hairlines, monospace precision.
+ * The workspace owns the viewport; the transport and stage sit under it.
+ * The brand film brings its own artboard styles (brand-film.css).
  */
 
 .gsap-root {
@@ -12,6 +13,17 @@
   padding: clamp(20px, 4vw, 48px);
   max-width: 1280px;
   margin: 0 auto;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: #000;
 }
 
 .gsap-head {
@@ -81,6 +93,11 @@
   color: #fafafa;
 }
 
+.gsap-btn:focus-visible {
+  outline: 1px solid #fafafa;
+  outline-offset: 2px;
+}
+
 .gsap-time {
   font-size: 11px;
   color: #8e8e96;
@@ -97,17 +114,24 @@
   line-height: 1.6;
 }
 
+.gsap-note strong {
+  color: #d4d4d8;
+  font-weight: 600;
+}
+
 .gsap-empty {
   font-size: 12px;
   color: #63636b;
   margin-top: 16px;
 }
 
-.gsap-empty code {
+.gsap-empty code,
+.gsap-note code {
   color: #a1a1aa;
 }
 
-/* OBSIDIAN HERO scene — editorial monochrome, restrained. */
+/* Stage: black, framed, overflow-clipped. The brand film owns its own
+   1600x900 artboard and drops the chrome padding. */
 
 .gsap-stage {
   position: relative;
@@ -121,7 +145,6 @@
   padding: 48px 24px;
 }
 
-/* Brand film: the artboard is the stage, so drop the chrome padding. */
 .gsap-stage-film {
   padding: 0;
   background: #04040a;
@@ -145,89 +168,13 @@
   color: #fca5a5;
 }
 
-.gsap-note code {
-  color: #d4d4d8;
-}
-
-.ob-bg {
-  position: absolute;
-  inset: -10%;
-  background: radial-gradient(ellipse 60% 50% at 50% 45%, #101013 0%, #050506 70%);
-}
-
-.ob-frame {
-  position: relative;
-  text-align: center;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 14px;
-  max-width: 720px;
-}
-
-.ob-eyebrow {
-  font-size: 11px;
-  letter-spacing: 0.34em;
-  text-indent: 0.34em;
-  color: #71717a;
-}
-
-.ob-title {
-  margin: 0;
-  font-size: clamp(56px, 10vw, 128px);
-  font-weight: 650;
-  letter-spacing: 0.04em;
-  line-height: 1;
-  color: #fafafa;
-}
-
-.ob-sub {
-  margin: 0;
-  font-size: clamp(14px, 2vw, 19px);
-  letter-spacing: 0.06em;
-  color: #a1a1aa;
-}
-
-.ob-visual {
-  position: relative;
-  width: 120px;
-  height: 120px;
-  margin-top: 10px;
-}
-
-.ob-ring {
-  position: absolute;
-  inset: 0;
-  border: 1px solid #2b2b30;
-  border-radius: 50%;
-}
-
-.ob-ring-2 {
-  inset: 18px;
-  border-color: #1c1c1f;
-}
-
-.ob-orb {
-  position: absolute;
-  inset: 44px;
-  border-radius: 50%;
-  background: #e4e4e7;
-}
-
-.ob-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 22px;
-  justify-content: center;
-  margin-top: 12px;
-  font-size: 10px;
-  letter-spacing: 0.22em;
-  color: #52525b;
-}
-
 @media (max-width: 640px) {
   .gsap-head {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .gsap-transport {
+    flex-wrap: wrap;
   }
 }

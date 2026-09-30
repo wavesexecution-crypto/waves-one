@@ -43,6 +43,9 @@ export default function GsapLab() {
   const engineRef = useRef<GsapEngine | null>(null);
   const playbackRef = useRef<GsapPlayback | null>(null);
   const liveRef = useRef<string | null>(null);
+  const scenesRef = useRef<Array<{ label: string; at: number }>>([]);
+  /** Reduced-motion transport is a stepper, not a player. */
+  const stepRef = useRef(0);
   const [live, setLive] = useState<GsapLiveState | null>(null);
   const [state, setState] = useState<GsapPlaybackState>("IDLE");
   const [totalMs, setTotalMs] = useState(0);
@@ -68,6 +71,12 @@ export default function GsapLab() {
       try {
         const { playback, report } = engine.build(scene.spec, { autoplay: true });
         playbackRef.current = playback;
+        // Labelled beats come from the spec, not a hardcoded scene: stepping
+        // under reduced motion must land on real scene starts.
+        scenesRef.current = scene.spec.ops
+          .filter((op) => typeof (op as { label?: unknown }).label === "string")
+          .map((op) => ({ label: (op as { label: string }).label, at: typeof op.position === "number" ? op.position : 0 }))
+          .sort((a, b) => a.at - b.at);
         totalMsRef.current = playback.totalMs;
         setTotalMs(playback.totalMs);
         setPositionMs(0);
@@ -85,6 +94,7 @@ export default function GsapLab() {
           setNotice(null);
         }
       } catch (error) {
+        scenesRef.current = [];
         setTotalMs(0);
         totalMsRef.current = 0;
         setPositionMs(0);
@@ -155,9 +165,71 @@ export default function GsapLab() {
 
   const fmt = (ms: number) => `${(ms / 1000).toFixed(1)}s`;
 
+  /**
+   * Under reduced motion the engine parks the scene on its final frame and will
+   * not animate on its own — so a plain play/pause pair is two dead buttons.
+   * Reduced motion still means the viewer can *inspect* the film, so the
+   * transport steps deterministically between the spec's own labelled beats.
+   */
+  const stepTo = useCallback((index: number) => {
+    const playback = playbackRef.current;
+    const scenes = scenesRef.current;
+    if (!playback) return;
+    if (scenes.length === 0) {
+      playback.progress(index > 0 ? 1 : 0);
+      return;
+    }
+    const clamped = Math.max(0, Math.min(scenes.length - 1, index));
+    stepRef.current = clamped;
+    // Land just inside the scene, not on its first frame: a scene's own
+    // entrance is still running at its label, which would show a black stage.
+    // The last scene is already the film's held final frame, so use the end.
+    const start = scenes[clamped].at;
+    const next = scenes[clamped + 1]?.at;
+    const totalSeconds = totalMsRef.current / 1000;
+    const target = next === undefined ? totalSeconds : Math.min(start + 0.5, Math.max(start, next - 0.05));
+    playback.progress(totalSeconds > 0 ? Math.min(1, target / totalSeconds) : 0);
+    setPositionMs(Math.round(playback.time() * 1000));
+    setState(clamped >= scenes.length - 1 ? "COMPLETED" : "PAUSED");
+  }, []);
+
+  const onPlay = useCallback(() => {
+    if (!reduced) {
+      playbackRef.current?.play();
+      return;
+    }
+    stepTo(stepRef.current + 1);
+  }, [reduced, stepTo]);
+
+  const onPause = useCallback(() => {
+    if (!reduced) {
+      playbackRef.current?.pause();
+      setState(playbackRef.current?.state() ?? "IDLE");
+      return;
+    }
+    setState("PAUSED");
+  }, [reduced]);
+
+  const onRestart = useCallback(() => {
+    if (reduced) {
+      stepTo(0);
+      return;
+    }
+    playbackRef.current?.restart();
+  }, [reduced, stepTo]);
+
+  const onReverse = useCallback(() => {
+    if (reduced) {
+      stepTo(stepRef.current - 1);
+      return;
+    }
+    playbackRef.current?.reverse();
+  }, [reduced, stepTo]);
+
   const activeName = live?.spec.name ?? null;
   const isBrandFilm = activeName === BRAND_FILM;
   const knownScene = SCENE_LAYERS.some((layer) => layer.name === activeName);
+  const sceneLabel = reduced ? scenesRef.current[stepRef.current]?.label ?? null : null;
 
   return (
     <div className="gsap-root">
@@ -168,15 +240,20 @@ export default function GsapLab() {
         </div>
         <div className="gsap-transport" role="toolbar" aria-label="Playback controls">
           <span className={`gsap-state gsap-state-${state.toLowerCase()}`} role="status">{state}</span>
-          <button type="button" className="gsap-btn" onClick={() => playbackRef.current?.play()} aria-label="Play">▶</button>
-          <button type="button" className="gsap-btn" onClick={() => { playbackRef.current?.pause(); setState(playbackRef.current?.state() ?? "IDLE"); }} aria-label="Pause">❚❚</button>
-          <button type="button" className="gsap-btn" onClick={() => playbackRef.current?.restart()} aria-label="Restart">⟲</button>
-          <button type="button" className="gsap-btn" onClick={() => playbackRef.current?.reverse()} aria-label="Reverse">↩</button>
+          <button type="button" className="gsap-btn" onClick={onPlay} aria-label={reduced ? "Next scene" : "Play"}>▶</button>
+          <button type="button" className="gsap-btn" onClick={onPause} aria-label={reduced ? "Hold" : "Pause"}>❚❚</button>
+          <button type="button" className="gsap-btn" onClick={onRestart} aria-label={reduced ? "First scene" : "Restart"}>⟲</button>
+          <button type="button" className="gsap-btn" onClick={onReverse} aria-label={reduced ? "Previous scene" : "Reverse"}>↩</button>
           <span className="gsap-time">{fmt(positionMs)} / {fmt(totalMs)}</span>
         </div>
       </header>
 
-      {reduced ? <div className="gsap-note" role="note">Reduced motion active — final state shown, ambient/scroll motion off.</div> : null}
+      {reduced ? (
+        <div className="gsap-note" role="note">
+          Reduced motion active — the film will not animate on its own. ▶ steps scene by scene
+          {sceneLabel ? <> · on <strong>{sceneLabel}</strong></> : null}, ↩ steps back, ⟲ returns to the opening frame.
+        </div>
+      ) : null}
       {notice ? <div className={`gsap-note gsap-note-${notice.tone}`} role="alert">{notice.text}</div> : null}
       {live && !knownScene ? (
         <div className="gsap-note" role="note">
