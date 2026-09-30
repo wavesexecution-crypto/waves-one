@@ -68,6 +68,7 @@ export default function GsapLab() {
   const stageRef = useRef<HTMLDivElement>(null);
   const engineRef = useRef<GsapEngine | null>(null);
   const playbackRef = useRef<GsapPlayback | null>(null);
+const unsubscribeRef = useRef<(() => void) | null>(null);
   const clockRef = useRef<HTMLSpanElement>(null);
   const liveRef = useRef<string | null>(null);
   const scenesRef = useRef<Array<{ label: string; at: number }>>([]);
@@ -123,6 +124,10 @@ export default function GsapLab() {
 
   const teardown = useCallback(() => {
     playbackRef.current = null;
+    // Drop the tick subscription before the engine disposes, or a disposed
+    // timeline keeps a listener alive across a rebuild.
+    unsubscribeRef.current?.();
+    unsubscribeRef.current = null;
     if (engineRef.current) {
       engineRef.current.dispose();
       engineRef.current = null;
@@ -153,6 +158,12 @@ export default function GsapLab() {
         playback.onStateChange((next) => {
           setState(next);
           writeClock(Math.min(Math.round(playback.time() * 1000), totalMsRef.current));
+        });
+        // Clock comes from GSAP's own onUpdate, not a setInterval reading
+        // time() out of step with the ticker. The stage and the readout now
+        // cannot disagree: if this does not fire, the frame did not move.
+        unsubscribeRef.current = playback.onUpdate((seconds) => {
+          writeClock(Math.min(Math.round(seconds * 1000), totalMsRef.current));
         });
         if (report.skipped.length > 0) {
           setNotice({ tone: "info", text: `${report.skipped.length} op(s) skipped (${report.skipped[0].slice(0, 90)})` });
@@ -185,23 +196,31 @@ export default function GsapLab() {
 
         // Stage/spec version handshake. A tab left open across a deploy holds
         // the old bundle while gsap-state.json is always fresh, which used to
-        // strand the viewer on unresolved selectors. Reload once for this
-        // version; if it still disagrees the server is serving something we do
-        // not recognise, so say so instead of looping. The expected version is
-        // resolved per scene, since each stage versions its own markup.
+        // strand the viewer on unresolved selectors.
+        //
+        // This must NOT be allowed to block loading. Returning early here left
+        // `live` null, so the Lab fell back to the static OBSIDIAN HERO layer
+        // and PLAY was a dead control — a version number could take down
+        // playback entirely. Load and play regardless, and report the skew.
         const expected = stageVersionFor(next.name);
-        if (typeof next.stageVersion === "number" && typeof expected === "number" && next.stageVersion !== expected) {
+        const skewed =
+          typeof next.stageVersion === "number" && typeof expected === "number" && next.stageVersion !== expected;
+        if (skewed) {
+          setNotice({
+            tone: "info",
+            text: `Scene "${next.name}" was published against stage v${next.stageVersion}; this build is v${expected}. Playing anyway — reload for the exact build.`
+          });
+          // Only a genuine retry loop warrants a reload, and the guard is
+          // cleared on every successful load below so a version can never
+          // permanently brick a session.
           const guardKey = `${RELOAD_GUARD}:${next.name}:${next.stageVersion}`;
-          if (sessionStorage.getItem(guardKey)) {
-            setNotice({
-              tone: "error",
-              text: `Published scene "${next.name}" expects stage v${next.stageVersion}, this build is v${expected}. Hard-reload to update.`
-            });
-            return;
+          if (!sessionStorage.getItem(guardKey)) {
+            sessionStorage.setItem(guardKey, "1");
+            sessionStorage.removeItem(`${RELOAD_GUARD}:loaded`);
           }
-          sessionStorage.setItem(guardKey, "1");
-          location.reload();
-          return;
+        } else {
+          sessionStorage.removeItem(`${RELOAD_GUARD}:${next.name}:${next.stageVersion}`);
+          sessionStorage.setItem(`${RELOAD_GUARD}:loaded`, next.updatedAt);
         }
 
         if (next.updatedAt === liveRef.current) return;
@@ -213,17 +232,9 @@ export default function GsapLab() {
     };
     void poll();
     const timer = window.setInterval(() => void poll(), POLL_MS);
-    const position = window.setInterval(() => {
-      const playback = playbackRef.current;
-      if (playback && (playback.state() === "PLAYING")) {
-        // Ambient loops run forever by design; the clock caps at the plan total.
-        writeClock(Math.min(Math.round(playback.time() * 1000), totalMsRef.current));
-      }
-    }, 100);
     return () => {
       stopped = true;
       window.clearInterval(timer);
-      window.clearInterval(position);
     };
   }, [writeClock]);
 
@@ -266,40 +277,78 @@ export default function GsapLab() {
     setState(clamped >= scenes.length - 1 ? "COMPLETED" : "PAUSED");
   }, [writeClock]);
 
+  /**
+   * Transport handlers must never be a control that silently does nothing.
+   * Every one of these used to optional-chain a null playback ref, so with no
+   * scene loaded the four buttons stayed enabled, PLAY did nothing, and the Lab
+   * looked frozen on its first frame. The buttons are now disabled in that
+   * state; this guard is the belt to those braces.
+   */
+  const requirePlayback = useCallback((): GsapPlayback | null => {
+    const playback = playbackRef.current;
+    if (!playback) {
+      setNotice({
+        tone: "error",
+        text: "Nothing to play — no GSAP scene is loaded. Publish one (pnpm seai-reel:publish) or reload the page."
+      });
+      return null;
+    }
+    return playback;
+  }, []);
+
   const onPlay = useCallback(() => {
     if (!reduced) {
+      const playback = requirePlayback();
+      if (!playback) return;
       setSceneLabel(null);
-      playbackRef.current?.play();
+      // Replaying after COMPLETED must restart from 0, not sit at the end.
+      // The engine's play() deliberately holds at progress >= 1, so the UI owns
+      // that intent explicitly.
+      if (playback.progress() >= 1) playback.restart();
+      else playback.play();
       return;
     }
     stepTo(stepRef.current + 1);
-  }, [reduced, stepTo]);
+  }, [reduced, stepTo, requirePlayback]);
 
   const onPause = useCallback(() => {
     if (!reduced) {
-      playbackRef.current?.pause();
-      setState(playbackRef.current?.state() ?? "IDLE");
+      const playback = requirePlayback();
+      if (!playback) return;
+      playback.pause();
+      setState(playback.state());
       return;
     }
     setState("PAUSED");
-  }, [reduced]);
+  }, [reduced, requirePlayback]);
 
   const onRestart = useCallback(() => {
     if (reduced) {
       stepTo(0);
       return;
     }
+    const playback = requirePlayback();
+    if (!playback) return;
     setSceneLabel(null);
-    playbackRef.current?.restart();
-  }, [reduced, stepTo]);
+    playback.restart();
+  }, [reduced, stepTo, requirePlayback]);
 
   const onReverse = useCallback(() => {
     if (reduced) {
       stepTo(stepRef.current - 1);
       return;
     }
-    playbackRef.current?.reverse();
-  }, [reduced, stepTo]);
+    const playback = requirePlayback();
+    if (!playback) return;
+    // reverse() from time 0 is a no-op that leaves the stage on frame 0 with
+    // PLAYING reported, which is indistinguishable from the bug above.
+    if (playback.progress() <= 0) {
+      playback.pause();
+      setState("IDLE");
+      return;
+    }
+    playback.reverse();
+  }, [reduced, stepTo, requirePlayback]);
 
   /** Render on demand — only the local Lab can, since the worker is dev-only. */
   const renderNow = useCallback(async () => {
@@ -336,6 +385,9 @@ export default function GsapLab() {
   const isBrandFilm = activeName === BRAND_FILM;
   const isSeaiReel = activeName === SEAI_REEL;
   const knownScene = SCENE_LAYERS.some((layer) => layer.name === activeName);
+  /** No loaded playback means no transport. These buttons used to stay enabled
+   *  and no-op, which is exactly how a frozen first frame reads as a bug. */
+  const transportReady = playbackRef.current !== null && totalMs > 0;
   const videoHref = video?.ok !== false && video?.file ? video.file : null;
   const videoLabel = video
     ? `${video.width}×${video.height} · ${video.fps}fps ${video.codec} · ${video.container} · ${(video.size / 1_000_000).toFixed(2)} MB`
@@ -350,10 +402,10 @@ export default function GsapLab() {
         </div>
         <div className="gsap-transport" role="toolbar" aria-label="Playback controls">
           <span className={`gsap-state gsap-state-${state.toLowerCase()}`} role="status">{state}</span>
-          <button type="button" className="gsap-btn" onClick={onPlay} aria-label={reduced ? "Next scene" : "Play"}>▶</button>
-          <button type="button" className="gsap-btn" onClick={onPause} aria-label={reduced ? "Hold" : "Pause"}>❚❚</button>
-          <button type="button" className="gsap-btn" onClick={onRestart} aria-label={reduced ? "First scene" : "Restart"}>⟲</button>
-          <button type="button" className="gsap-btn" onClick={onReverse} aria-label={reduced ? "Previous scene" : "Reverse"}>↩</button>
+          <button type="button" className="gsap-btn" onClick={onPlay} disabled={!transportReady} aria-label={reduced ? "Next scene" : "Play"}>▶</button>
+          <button type="button" className="gsap-btn" onClick={onPause} disabled={!transportReady} aria-label={reduced ? "Hold" : "Pause"}>❚❚</button>
+          <button type="button" className="gsap-btn" onClick={onRestart} disabled={!transportReady} aria-label={reduced ? "First scene" : "Restart"}>⟲</button>
+          <button type="button" className="gsap-btn" onClick={onReverse} disabled={!transportReady} aria-label={reduced ? "Previous scene" : "Reverse"}>↩</button>
           <span className="gsap-time" ref={clockRef}>{fmt(0)} / {fmt(totalMs)}</span>
         </div>
       </header>

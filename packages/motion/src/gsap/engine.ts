@@ -35,6 +35,17 @@ export interface GsapPlayback {
   readonly totalMs: number;
   state(): GsapPlaybackState;
   onStateChange(listener: (state: GsapPlaybackState) => void): () => void;
+  /**
+   * Fires on every GSAP tick that advances the timeline, carrying real
+   * timeline time in seconds.
+   *
+   * This exists so consumers do not have to poll with their own `setInterval`.
+   * A competing timer reads `time()` out of step with GSAP's ticker, which is
+   * how a transport clock ends up looking alive while the stage is showing a
+   * stale frame. Driving the clock from the timeline's own `onUpdate` makes the
+   * readout and the rendered frame the same source of truth.
+   */
+  onUpdate(listener: (timeSeconds: number, progress: number) => void): () => void;
   play(): void;
   pause(): void;
   restart(): void;
@@ -217,6 +228,24 @@ export class GsapEngine {
     tl.eventCallback("onComplete", () => setState("COMPLETED"));
     tl.eventCallback("onReverseComplete", () => setState("IDLE"));
 
+    // Real per-tick progress, from GSAP's own ticker. A paused timeline that is
+    // seeked (scrub, reduced-motion step) does not fire onUpdate, so the
+    // listeners are also drained explicitly by `time`/`progress` below.
+    const updateListeners = new Set<(timeSeconds: number, progress: number) => void>();
+    const emitUpdate = (): void => {
+      if (updateListeners.size === 0) return;
+      const t = tl.time();
+      const p = tl.progress();
+      for (const listener of updateListeners) {
+        try {
+          listener(t, p);
+        } catch {
+          /* listener errors never break playback */
+        }
+      }
+    };
+    tl.eventCallback("onUpdate", emitUpdate);
+
     const at = (op: GsapOp): gsap.Position => (op.position === undefined ? ">" : (op.position as gsap.Position));
     const queryOrWarn = (op: GsapOp): string | null => {
       if (scopeEl && countTargets(scopeEl, op.target) === 0) {
@@ -258,6 +287,12 @@ export class GsapEngine {
           listeners.delete(listener);
         };
       },
+      onUpdate: (listener) => {
+        updateListeners.add(listener);
+        return () => {
+          updateListeners.delete(listener);
+        };
+      },
       play: () => {
         // At the end, play holds COMPLETED (restart() replays explicitly).
         if (tl.progress() >= 1) {
@@ -284,8 +319,19 @@ export class GsapEngine {
         tl.kill();
         setState("IDLE");
       },
-      time: (value?: number) => (value === undefined ? tl.time() : (tl.time(value), tl.time())),
-      progress: (value?: number) => (value === undefined ? tl.progress() : (tl.progress(value), tl.progress())),
+      // A seek on a paused timeline DOES fire the timeline's own onUpdate, so
+      // there is deliberately no manual emit here: adding one double-fired every
+      // scrub, and a consumer counting ticks would see two per seek.
+      time: (value?: number) => {
+        if (value === undefined) return tl.time();
+        tl.time(value);
+        return tl.time();
+      },
+      progress: (value?: number) => {
+        if (value === undefined) return tl.progress();
+        tl.progress(value);
+        return tl.progress();
+      },
       timeline: () => tl
     };
 
