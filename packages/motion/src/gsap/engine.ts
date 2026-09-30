@@ -176,7 +176,12 @@ export class GsapEngine {
       resolveTarget: scopeEl ? (selector) => countTargets(scopeEl, selector) : undefined
     });
     if (!validation.ok) {
-      throw new Error(`Invalid GSAP scene "${spec.name}": ${validation.errors.map((issue) => `${issue.opId}:${issue.code}`).join(", ")}`);
+      // A whole scene failing on one cause (e.g. a bundle that does not host
+      // the stage markup) can be hundreds of identical issues. Keep the
+      // thrown message short and legible; the validator still holds them all.
+      const summary = validation.errors.slice(0, 4).map((issue) => `${issue.opId}:${issue.code}`).join(", ");
+      const extra = validation.errors.length > 4 ? ` (+${validation.errors.length - 4} more)` : "";
+      throw new Error(`Invalid GSAP scene "${spec.name}": ${validation.errors.length} error(s) — ${summary}${extra}`);
     }
     for (const warning of validation.warnings) report.warnings.push(`${warning.opId}:${warning.code} ${warning.message}`);
 

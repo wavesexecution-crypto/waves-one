@@ -1,6 +1,6 @@
 {
   "name": "waves-brand-film-19s",
-  "updatedAt": "2026-09-30T01:25:03.956Z",
+  "updatedAt": "2026-09-30T04:43:04.780Z",
   "spec": {
     "version": 1,
     "name": "waves-brand-film-19s",
@@ -2089,5 +2089,6 @@
         "position": 0
       }
     ]
-  }
+  },
+  "stageVersion": 2
 }

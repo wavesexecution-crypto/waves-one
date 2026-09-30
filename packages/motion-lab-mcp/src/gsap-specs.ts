@@ -23,6 +23,13 @@ export interface GsapLiveState {
   name: string;
   updatedAt: string;
   spec: GsapSceneSpec;
+  /**
+   * Markup version of the stage this spec was authored against. The Lab
+   * reloads once when its own bundle reports a different version, so a spec
+   * published ahead of (or behind) the deployed bundle cannot strand a viewer
+   * on GSAP_TARGET_MISSING.
+   */
+  stageVersion?: number;
 }
 
 function specsDir(labDir: string): string {
@@ -148,10 +155,15 @@ export function modifyGsapSpec(
 }
 
 /** Publish a spec to the live mirror the Lab workspace plays. */
-export function publishGsapLive(labDir: string, name: string): GsapLiveState {
+export function publishGsapLive(labDir: string, name: string, stageVersion?: number): GsapLiveState {
   const record = getGsapSpec(labDir, name);
   if (!record) throw new Error(`Unknown GSAP animation "${name}".`);
-  const live: GsapLiveState = { name: record.name, updatedAt: new Date().toISOString(), spec: record.spec };
+  const live: GsapLiveState = {
+    name: record.name,
+    updatedAt: new Date().toISOString(),
+    spec: record.spec,
+    ...(typeof stageVersion === "number" ? { stageVersion } : {})
+  };
   writeAtomic(liveFile(labDir), JSON.stringify(live, null, 2));
   return live;
 }

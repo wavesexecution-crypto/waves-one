@@ -104,6 +104,38 @@ describe("waves brand film spec", () => {
     root.remove();
   });
 
+  it("plays whether or not the film layer is the visible one", () => {
+    // The Lab keeps every scene layer mounted and toggles visibility, so a
+    // scene must build against its markup even when that layer is hidden.
+    const root = stage();
+    const filmLayer = document.createElement("div");
+    filmLayer.style.display = "none";
+    filmLayer.appendChild(root.querySelector(".bf-artboard") ?? document.createComment("no artboard"));
+    document.body.appendChild(filmLayer);
+    const { report, playback } = new GsapEngine({ scope: root, reducedMotion: "off" }).build(spec, { autoplay: false });
+    expect(report.skipped).toEqual([]);
+    expect(playback.totalMs).toBe(BRAND_FILM_MS);
+    filmLayer.remove();
+  });
+
+  it("bounds a whole-scene selector failure instead of flooding the UI", () => {
+    // An empty stage is the stale-bundle failure mode: every op misses.
+    const empty = document.createElement("div");
+    document.body.appendChild(empty);
+    const engine = new GsapEngine({ scope: empty, reducedMotion: "off" });
+    let message = "";
+    try {
+      engine.build(spec, { autoplay: false });
+    } catch (error) {
+      message = error instanceof Error ? error.message : String(error);
+    }
+    expect(message).toMatch(/GSAP_TARGET_MISSING/);
+    expect(message).toMatch(/\(\+\d+ more\)/);
+    expect(message.length).toBeLessThan(300);
+    engine.dispose();
+    empty.remove();
+  });
+
   it("plans to exactly 19000ms", () => {
     expect(plan.totalMs).toBe(BRAND_FILM_MS);
     expect(plan.totalMs).toBe(19000);

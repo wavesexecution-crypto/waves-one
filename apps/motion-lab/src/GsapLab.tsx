@@ -1,15 +1,37 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { GsapEngine, type GsapPlayback, type GsapPlaybackState, type GsapSceneSpec } from "@waves/motion";
-import WavesBrandFilm from "./WavesBrandFilm";
+import WavesBrandFilm, { BRAND_FILM_STAGE_VERSION } from "./WavesBrandFilm";
 import "./gsap-lab.css";
 
 interface GsapLiveState {
   name: string;
   updatedAt: string;
   spec: GsapSceneSpec;
+  stageVersion?: number;
 }
 
 const POLL_MS = 1000;
+const BRAND_FILM = "waves-brand-film-19s";
+const RELOAD_GUARD = "waves-gsap-stage-reload";
+
+/** Scene markup is always mounted; only its visibility is switched. A spec can
+ *  therefore never outrun the bundle that is supposed to host its targets. */
+const SCENE_LAYERS = [
+  { name: "obsidian-hero", label: "OBSIDIAN HERO" },
+  { name: BRAND_FILM, label: "WAVES BRAND FILM" }
+] as const;
+
+/** Turn a raw engine failure into something a human can act on. */
+function explain(error: unknown, sceneName: string): string {
+  const raw = error instanceof Error ? error.message : String(error);
+  const missing = raw.match(/GSAP_TARGET_MISSING/g)?.length ?? 0;
+  if (missing === 0) return raw.slice(0, 400);
+  const sample = [...new Set(raw.match(/[a-z0-9-]+:GSAP_TARGET_MISSING/gi) ?? [])].slice(0, 3).join(", ");
+  return (
+    `"${sceneName}" targets markup this build does not render — ${missing} selector(s) unresolved (e.g. ${sample}). ` +
+    `If you just published or deployed, reload the page to pick up the current bundle.`
+  );
+}
 
 /**
  * GSAP workspace — plays the live GSAP scene (public/gsap-state.json)
@@ -26,7 +48,7 @@ export default function GsapLab() {
   const [totalMs, setTotalMs] = useState(0);
   const totalMsRef = useRef(0);
   const [positionMs, setPositionMs] = useState(0);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useState<{ tone: "info" | "error"; text: string } | null>(null);
   const [reduced, setReduced] = useState(false);
 
   const teardown = useCallback(() => {
@@ -56,14 +78,18 @@ export default function GsapLab() {
           setPositionMs(Math.min(Math.round(playback.time() * 1000), totalMsRef.current));
         });
         if (report.skipped.length > 0) {
-          setNotice(`${report.skipped.length} op(s) skipped (${report.skipped[0].slice(0, 90)})`);
+          setNotice({ tone: "info", text: `${report.skipped.length} op(s) skipped (${report.skipped[0].slice(0, 90)})` });
         } else if (report.warnings.length > 0) {
-          setNotice(`${report.warnings.length} validation warning(s)`);
+          setNotice({ tone: "info", text: `${report.warnings.length} validation warning(s)` });
         } else {
           setNotice(null);
         }
       } catch (error) {
-        setNotice(error instanceof Error ? error.message : String(error));
+        setTotalMs(0);
+        totalMsRef.current = 0;
+        setPositionMs(0);
+        setState("IDLE");
+        setNotice({ tone: "error", text: explain(error, scene.name) });
       }
     },
     [teardown]
@@ -76,11 +102,31 @@ export default function GsapLab() {
       try {
         const response = await fetch("gsap-state.json", { cache: "no-store" });
         if (!response.ok) return;
-        const state = (await response.json()) as GsapLiveState;
-        if (!state?.spec || !Array.isArray(state.spec.ops)) return;
-        if (state.updatedAt === liveRef.current) return;
-        liveRef.current = state.updatedAt;
-        setLive(state);
+        const next = (await response.json()) as GsapLiveState;
+        if (!next?.spec || !Array.isArray(next.spec.ops)) return;
+
+        // Stage/spec version handshake. A tab left open across a deploy holds
+        // the old bundle while gsap-state.json is always fresh, which used to
+        // strand the viewer on unresolved selectors. Reload once for this
+        // version; if it still disagrees the server is serving something we do
+        // not recognise, so say so instead of looping.
+        if (typeof next.stageVersion === "number" && next.stageVersion !== BRAND_FILM_STAGE_VERSION) {
+          const guardKey = `${RELOAD_GUARD}:${next.stageVersion}`;
+          if (sessionStorage.getItem(guardKey)) {
+            setNotice({
+              tone: "error",
+              text: `Published scene expects stage v${next.stageVersion}, this build is v${BRAND_FILM_STAGE_VERSION}. Hard-reload to update.`
+            });
+            return;
+          }
+          sessionStorage.setItem(guardKey, "1");
+          location.reload();
+          return;
+        }
+
+        if (next.updatedAt === liveRef.current) return;
+        liveRef.current = next.updatedAt;
+        setLive(next);
       } catch {
         /* dev hiccup — next tick retries */
       }
@@ -109,9 +155,9 @@ export default function GsapLab() {
 
   const fmt = (ms: number) => `${(ms / 1000).toFixed(1)}s`;
 
-  // The brand film owns its own 1600x900 artboard; everything else uses the
-  // default padded OBSIDIAN stage.
-  const isBrandFilm = live?.spec.name === "waves-brand-film-19s";
+  const activeName = live?.spec.name ?? null;
+  const isBrandFilm = activeName === BRAND_FILM;
+  const knownScene = SCENE_LAYERS.some((layer) => layer.name === activeName);
 
   return (
     <div className="gsap-root">
@@ -131,31 +177,36 @@ export default function GsapLab() {
       </header>
 
       {reduced ? <div className="gsap-note" role="note">Reduced motion active — final state shown, ambient/scroll motion off.</div> : null}
-      {notice ? <div className="gsap-note" role="note">{notice}</div> : null}
+      {notice ? <div className={`gsap-note gsap-note-${notice.tone}`} role="alert">{notice.text}</div> : null}
+      {live && !knownScene ? (
+        <div className="gsap-note" role="note">
+          No built-in stage for <code>{live.name}</code> — the scene is playing against the default stage, so its selectors may not resolve.
+        </div>
+      ) : null}
 
+      {/* Every scene layer stays mounted; only the active one is visible. */}
       <div className={`gsap-stage${isBrandFilm ? " gsap-stage-film" : ""}`} ref={stageRef} aria-label="GSAP stage">
-        {isBrandFilm ? (
-          <WavesBrandFilm />
-        ) : (
-          <>
-            <div className="ob-bg" aria-hidden="true" />
-            <div className="ob-frame">
-              <div className="ob-eyebrow">WAVES — MOTION LAB</div>
-              <h2 className="ob-title">WAVES</h2>
-              <p className="ob-sub">Motion, engineered.</p>
-              <div className="ob-visual" aria-hidden="true">
-                <span className="ob-ring ob-ring-1" />
-                <span className="ob-ring ob-ring-2" />
-                <span className="ob-orb" />
-              </div>
-              <div className="ob-meta">
-                <span>ENGINE · GSAP</span>
-                <span>TRACK · DETERMINISTIC</span>
-                <span>SPEC · SERIALIZABLE</span>
-              </div>
+        <div className="gsap-layer" data-scene="obsidian-hero" data-active={!isBrandFilm}>
+          <div className="ob-bg" aria-hidden="true" />
+          <div className="ob-frame">
+            <div className="ob-eyebrow">WAVES — MOTION LAB</div>
+            <h2 className="ob-title">WAVES</h2>
+            <p className="ob-sub">Motion, engineered.</p>
+            <div className="ob-visual" aria-hidden="true">
+              <span className="ob-ring ob-ring-1" />
+              <span className="ob-ring ob-ring-2" />
+              <span className="ob-orb" />
             </div>
-          </>
-        )}
+            <div className="ob-meta">
+              <span>ENGINE · GSAP</span>
+              <span>TRACK · DETERMINISTIC</span>
+              <span>SPEC · SERIALIZABLE</span>
+            </div>
+          </div>
+        </div>
+        <div className="gsap-layer" data-scene={BRAND_FILM} data-active={isBrandFilm}>
+          <WavesBrandFilm />
+        </div>
       </div>
 
       {!live ? (

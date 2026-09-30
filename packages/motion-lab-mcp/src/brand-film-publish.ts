@@ -12,6 +12,9 @@ import { resolvePaths } from "./store.js";
 import { buildGsapScene, publishGsapLive, saveGsapSpec, testGsapSpec } from "./gsap-specs.js";
 import { BRAND_FILM_MS, BRAND_FILM_SCENES, buildWavesBrandFilm } from "@waves/motion";
 
+/** Keep in sync with BRAND_FILM_STAGE_VERSION in apps/motion-lab/src/WavesBrandFilm.tsx. */
+const BRAND_FILM_STAGE_VERSION = 2;
+
 const paths = resolvePaths(process.cwd());
 // buildGsapScene assigns deterministic op ids and runs the validator; the
 // engine authors the ops, so the shape is already GsapOp-compatible.
@@ -23,7 +26,7 @@ const spec = buildGsapScene({
 
 const record = saveGsapSpec(paths.labDir, spec);
 const tested = testGsapSpec(record.spec);
-const live = publishGsapLive(paths.labDir, record.name);
+const live = publishGsapLive(paths.labDir, record.name, BRAND_FILM_STAGE_VERSION);
 
 if (!tested.validation.ok) {
   console.error("brand film failed validation:", tested.validation.errors);
@@ -40,4 +43,5 @@ console.log(`name     ${record.name}`);
 console.log(`ops      ${record.spec.ops.length}`);
 console.log(`total    ${tested.plan.totalMs}ms (${(tested.plan.totalMs / 1000).toFixed(3)}s)`);
 console.log(`scenes   ${BRAND_FILM_SCENES.map((scene) => `${scene.label}@${scene.at}s`).join("  ")}`);
+console.log(`stage    v${BRAND_FILM_STAGE_VERSION}`);
 console.log(`live     ${live.updatedAt}`);

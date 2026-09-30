@@ -127,6 +127,28 @@
   background: #04040a;
 }
 
+/* Scene layers are always mounted so a spec can never outrun the bundle that
+   hosts its targets; only the active layer is shown. */
+.gsap-layer {
+  display: none;
+  width: 100%;
+}
+
+.gsap-layer[data-active="true"] {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.gsap-note-error {
+  border-color: #7f1d1d;
+  color: #fca5a5;
+}
+
+.gsap-note code {
+  color: #d4d4d8;
+}
+
 .ob-bg {
   position: absolute;
   inset: -10%;

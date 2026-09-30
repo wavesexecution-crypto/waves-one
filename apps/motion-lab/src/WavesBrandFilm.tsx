@@ -14,6 +14,14 @@ import "./brand-film.css";
 const ARTBOARD_W = 1600;
 const ARTBOARD_H = 900;
 
+/**
+ * Bump whenever the markup below changes shape. The publisher stamps the spec
+ * with this value; the Lab compares it against its own bundle and reloads
+ * once when they disagree, so a tab left open across a deploy self-heals
+ * instead of dying on GSAP_TARGET_MISSING.
+ */
+export const BRAND_FILM_STAGE_VERSION = 2;
+
 const SCENES = [
   { id: "s1", label: "IDENTITY" },
   { id: "s2", label: "COMPANY" },
@@ -46,7 +54,7 @@ export default function WavesBrandFilm() {
   }, []);
 
   return (
-    <div className="bf-frame" ref={frameRef}>
+    <div className="bf-frame" ref={frameRef} data-stage-version={BRAND_FILM_STAGE_VERSION}>
       <div className="bf-artboard" style={{ width: ARTBOARD_W, height: ARTBOARD_H }}>
         <div className="bf-vignette" />
         <div className="bf-halo" />
