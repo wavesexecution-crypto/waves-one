@@ -26,6 +26,15 @@ export {
   type GsapVars
 } from "./spec";
 export { BRAND_FILM_MS, BRAND_FILM_NAME, BRAND_FILM_SCENES, buildWavesBrandFilm } from "./brand-film";
+export {
+  SEAI_REEL_H,
+  SEAI_REEL_MS,
+  SEAI_REEL_NAME,
+  SEAI_REEL_ORIENTATION,
+  SEAI_REEL_SCENES,
+  SEAI_REEL_W,
+  buildSeaiLaunchReel
+} from "./seai-launch-reel";
 export { planTimeline, type GsapPlan, type PlannedOp } from "./plan";
 export { validateGsapSpec, type GsapIssue, type GsapValidateOptions, type GsapValidationReport } from "./validate";
 export { GsapEngine, playGsapScene, type GsapBuildWarnings, type GsapEngineOptions, type GsapPlayback, type GsapPlaybackState } from "./engine";

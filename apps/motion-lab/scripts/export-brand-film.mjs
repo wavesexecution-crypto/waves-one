@@ -11,7 +11,7 @@
  * `/__lab/export-video` does not exist on the static deployment. The film is
  * deterministic, so shipping the MP4 gives every visitor a real download.
  *
- *   node scripts/export-brand-film.mjs [--port 5177] [--scene waves-brand-film-19s]
+ *   node scripts/export-brand-film.mjs [--port 5177] [--scene <name>] [--fps 60]
  */
 
 import { execFileSync, spawn } from "node:child_process";
@@ -34,9 +34,15 @@ const argValue = (name, fallback) => {
 const port = Number(argValue("--port", "5177")) || 5177;
 const scene = argValue("--scene", "waves-brand-film-19s");
 
-const WIDTH = 1920;
-const HEIGHT = 1080;
-const RECORD_FPS = 25;
+/** Authored artboards, keyed by scene. A scene's geometry belongs to its stage
+ *  (GsapSceneSpec deliberately carries no width/height), so the exporter keeps
+ *  the same table the artboard components use. */
+const SCENES = {
+  "waves-brand-film-19s": { width: 1920, height: 1080, fps: 25, artboard: ".bf-artboard" },
+  "seai-launch-reel": { width: 1080, height: 1920, fps: 30, artboard: ".sr-artboard" }
+};
+
+const outputFps = Number(argValue("--fps", "60")) || 60;
 const TAIL_SEC = 1.2;
 
 function findChromium() {
@@ -105,11 +111,14 @@ function filmDurationMs() {
 }
 
 async function main() {
+  const target = SCENES[scene];
+  if (!target) throw new Error(`Unknown scene "${scene}". Known: ${Object.keys(SCENES).join(", ")}`);
+  const { width: WIDTH, height: HEIGHT, artboard } = target;
   const durationMs = filmDurationMs();
   const recordSec = durationMs / 1000 + TAIL_SEC;
   console.log(`scene     ${scene}`);
   console.log(`duration  ${(durationMs / 1000).toFixed(3)}s (+${TAIL_SEC}s tail)`);
-  console.log(`output    ${WIDTH}x${HEIGHT} @ ${RECORD_FPS}fps -> 60fps H.264`);
+  console.log(`output    ${WIDTH}x${HEIGHT} @ ${outputFps}fps H.264`);
 
   const server = await ensureServer();
   const browser = await chromium.launch({ executablePath: findChromium(), headless: true });
@@ -124,11 +133,26 @@ async function main() {
     const started = Date.now();
     await page.goto(`http://localhost:${port}/?capture=1`, { waitUntil: "load", timeout: 60_000 });
     // Readiness, not wall time: the film starts when the stage materializes.
-    await page.waitForSelector(".bf-artboard", { timeout: 60_000 });
+    await page.waitForSelector(artboard, { timeout: 60_000 });
     const leadSec = Math.max(0, (Date.now() - started) / 1000);
     await page.waitForFunction(() => document.querySelector('[role="status"]')?.textContent === "PLAYING", null, { timeout: 30_000 });
     const title = await page.evaluate(() => document.querySelector(".gsap-head h1")?.textContent ?? null);
     if (title !== scene) throw new Error(`Page is playing "${title}", expected "${scene}".`);
+
+    // Capture layout must fill the recording frame exactly. If the stage kept
+    // its page padding or letterboxed, every frame would carry dead bars — so
+    // fail here, before spending a minute on the encode.
+    const fit = await page.evaluate((sel) => {
+      const art = document.querySelector(sel);
+      if (!art) return null;
+      const r = art.getBoundingClientRect();
+      return { w: Math.round(r.width), h: Math.round(r.height), vw: window.innerWidth, vh: window.innerHeight };
+    }, artboard);
+    if (!fit) throw new Error(`Capture mode did not render ${artboard}.`);
+    if (Math.abs(fit.w - fit.vw) > 2 || Math.abs(fit.h - fit.vh) > 2) {
+      throw new Error(`Capture is ${fit.w}x${fit.h} inside a ${fit.vw}x${fit.vh} frame — expected a full-bleed stage.`);
+    }
+    console.log(`capture   ${fit.w}x${fit.h} full bleed`);
     await page.waitForTimeout(Math.ceil(recordSec * 1000));
     const recording = page.video();
     if (!recording) throw new Error("Video recording did not start.");
@@ -148,7 +172,7 @@ async function main() {
         "-ss", leadSec.toFixed(2),
         "-i", webmPath,
         "-t", (durationMs / 1000).toFixed(3),
-        "-vf", `fps=60,scale=${WIDTH}:${HEIGHT}`,
+        "-vf", `fps=${outputFps},scale=${WIDTH}:${HEIGHT}`,
         "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "18", "-preset", "medium",
         "-movflags", "+faststart", "-an",
         mp4Path
@@ -165,7 +189,7 @@ async function main() {
           filename: mp4Name,
           width: WIDTH,
           height: HEIGHT,
-          fps: 60,
+          fps: outputFps,
           codec: "h264",
           container: "mp4",
           durationMs,

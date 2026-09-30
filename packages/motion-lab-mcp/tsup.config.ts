@@ -23,7 +23,7 @@ export default defineConfig([
     }
   },
   {
-    entry: { backend: "src/backend.ts", "brand-film-publish": "src/brand-film-publish.ts" },
+    entry: { backend: "src/backend.ts", "brand-film-publish": "src/brand-film-publish.ts", "seai-reel-publish": "src/seai-reel-publish.ts" },
     format: ["esm"],
     dts: false,
     sourcemap: true,

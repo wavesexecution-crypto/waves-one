@@ -1,0 +1,14 @@
+{
+  "ok": true,
+  "scene": "seai-launch-reel",
+  "file": "/exports/seai-launch-reel.mp4",
+  "filename": "seai-launch-reel.mp4",
+  "width": 1080,
+  "height": 1920,
+  "fps": 30,
+  "codec": "h264",
+  "container": "mp4",
+  "durationMs": 15000,
+  "size": 2288675,
+  "renderedAt": "2026-09-30T06:18:26.122Z"
+}

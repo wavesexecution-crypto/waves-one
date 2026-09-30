@@ -145,9 +145,25 @@ body {
   padding: 48px 24px;
 }
 
+/* Layers are stretched to the stage's height rather than centred, so an artboard
+   has a definite box to fit itself into. Without this a portrait frame's
+   `height: 100%` has nothing to resolve against and collapses to zero. */
+.gsap-stage > .gsap-layer {
+  align-self: stretch;
+  min-height: 0;
+}
+
 .gsap-stage-film {
   padding: 0;
   background: #04040a;
+}
+
+/* 9:16 stage. A portrait artboard is height-bound, so the stage grows to give it
+   real height instead of letting a 1080px-wide frame overflow a 640px box. */
+.gsap-stage-reel {
+  min-height: min(88vh, 980px);
+  background: #0a0a0b;
+  padding: 24px;
 }
 
 /* Scene layers are always mounted so a spec can never outrun the bundle that
@@ -221,4 +237,30 @@ body {
   .gsap-transport {
     flex-wrap: wrap;
   }
+}
+/* Video capture mode (?capture=1): the stage is the whole viewport, so an
+   exported file is pixel-identical to the composition. Shared by every stage,
+   so it lives here rather than in a single film's stylesheet. */
+.bf-capture body {
+  overflow: hidden;
+}
+
+.bf-capture .gsap-root {
+  min-height: 100vh;
+  max-width: none;
+  padding: 0;
+}
+
+.bf-capture .gsap-head,
+.bf-capture .gsap-note,
+.bf-capture .gsap-empty,
+.bf-capture .gsap-actions {
+  display: none !important;
+}
+
+.bf-capture .gsap-stage {
+  min-height: 100vh;
+  height: 100vh;
+  border: 0;
+  padding: 0;
 }

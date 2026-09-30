@@ -1,6 +1,6 @@
 {
   "name": "seai-launch-reel",
-  "updatedAt": "2026-09-30T06:08:02.728Z",
+  "description": "SEAI launch reel — 9:16 1080x1920, 15s. Hook, claim, four built sites, four pillars collapsing into one, one finished site, lockup.",
   "spec": {
     "version": 1,
     "name": "seai-launch-reel",
@@ -1113,5 +1113,5 @@
       }
     ]
   },
-  "stageVersion": 1
+  "updatedAt": "2026-09-30T06:08:02.720Z"
 }

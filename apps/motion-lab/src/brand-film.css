@@ -10,11 +10,16 @@
 
 .bf-frame {
   position: relative;
-  width: 100%;
+  /* Sized by Artboard's fitted-rect measurement, like the 9:16 reel — one
+     mechanism for both stages, so the two cannot drift apart. The values here
+     are only the pre-measurement fallback. */
+  flex: none;
+  width: min(100%, 480px);
   aspect-ratio: 1600 / 900;
   overflow: hidden;
   background: #04040a;
   --bf-accent: #6f8cff;
+  --bf-scale: 0.5;
 }
 
 .bf-artboard {
@@ -879,36 +884,8 @@
   transform: scaleX(0);
 }
 
-/* Video capture mode (?capture=1): the stage is the whole frame, so an
-   exported film is pixel-identical to what the viewer sees. */
-.bf-capture body {
-  overflow: hidden;
-}
-
-.bf-capture .gsap-root {
-  min-height: 100vh;
-  max-width: none;
-  padding: 0;
-}
-
-.bf-capture .gsap-head,
-.bf-capture .gsap-note,
-.bf-capture .gsap-empty,
-.bf-capture .gsap-prompt,
-.bf-capture .gsap-actions {
-  display: none !important;
-}
-
-.bf-capture .gsap-stage {
-  min-height: 100vh;
-  height: 100vh;
-  border: 0;
-}
-
-.bf-capture .bf-frame {
-  height: 100vh;
-  aspect-ratio: auto;
-}
+/* Video capture mode (?capture=1) lives in gsap-lab.css — it is shared chrome
+   for every stage, not brand-film styling. */
 
 @media (prefers-reduced-motion: reduce) {
   .bf-wordmark,

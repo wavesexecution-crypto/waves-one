@@ -13,7 +13,7 @@
     "test:export": "node test/export.mjs",
     "test:shell": "node shellcheck.mjs",
     "export:film": "node scripts/export-film.mjs",
-    "export:brand-film": "pnpm --filter @waves/motion build && node scripts/export-brand-film.mjs"
+    "export:brand-film": "pnpm --filter @waves/motion build && node scripts/export-brand-film.mjs", "export:seai-reel": "pnpm export:brand-film --scene seai-launch-reel --fps 30"
   },
   "dependencies": {
     "@waves/motion": "workspace:*",

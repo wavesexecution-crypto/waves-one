@@ -3,12 +3,11 @@
  * every node a plain target for the Motion Spec's selectors. No CSS animation
  * and no keyframes here — GSAP owns all motion; CSS only owns layout and type.
  *
- * The artboard is scaled to fit with a ResizeObserver (one transform on a
- * wrapper GSAP never touches), so the film's pixel choreography in
- * `brand-film.ts` stays exact at any viewport size.
+ * Sizing is delegated to the shared `Artboard`, so this film and the 9:16 SEAI
+ * reel are scaled by one rule instead of two hand-rolled ResizeObservers.
  */
 
-import { useEffect, useRef } from "react";
+import Artboard from "./Artboard";
 import "./brand-film.css";
 
 const ARTBOARD_W = 1600;
@@ -34,28 +33,15 @@ const SCENES = [
 ] as const;
 
 export default function WavesBrandFilm() {
-  const frameRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const frame = frameRef.current;
-    if (!frame) return;
-    const apply = () => {
-      const width = frame.clientWidth || ARTBOARD_W;
-      frame.style.setProperty("--bf-scale", String(width / ARTBOARD_W));
-    };
-    apply();
-    if (typeof ResizeObserver === "undefined") {
-      window.addEventListener("resize", apply);
-      return () => window.removeEventListener("resize", apply);
-    }
-    const observer = new ResizeObserver(apply);
-    observer.observe(frame);
-    return () => observer.disconnect();
-  }, []);
-
   return (
-    <div className="bf-frame" ref={frameRef} data-stage-version={BRAND_FILM_STAGE_VERSION}>
-      <div className="bf-artboard" style={{ width: ARTBOARD_W, height: ARTBOARD_H }}>
+    <Artboard
+      width={ARTBOARD_W}
+      height={ARTBOARD_H}
+      frameClassName="bf-frame"
+      artboardClassName="bf-artboard"
+      scaleProperty="--bf-scale"
+      stageVersion={BRAND_FILM_STAGE_VERSION}
+    >
         <div className="bf-vignette" />
         <div className="bf-halo" />
 
@@ -270,7 +256,6 @@ export default function WavesBrandFilm() {
           ))}
         </div>
         <div className="bf-progress" />
-      </div>
-    </div>
+    </Artboard>
   );
 }

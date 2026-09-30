@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { GsapEngine, type GsapPlayback, type GsapPlaybackState, type GsapSceneSpec } from "@waves/motion";
 import WavesBrandFilm, { BRAND_FILM_STAGE_VERSION } from "./WavesBrandFilm";
+import SeaiLaunchReel, { SEAI_REEL_STAGE_VERSION } from "./SeaiLaunchReel";
 import "./gsap-lab.css";
 
 interface GsapLiveState {
@@ -25,14 +26,26 @@ interface FilmVideo {
 
 const POLL_MS = 1000;
 const BRAND_FILM = "waves-brand-film-19s";
+const SEAI_REEL = "seai-launch-reel";
 const RELOAD_GUARD = "waves-gsap-stage-reload";
 
 /** Scene markup is always mounted; only its visibility is switched. A spec can
  *  therefore never outrun the bundle that is supposed to host its targets. */
 const SCENE_LAYERS = [
-  { name: "obsidian-hero", label: "OBSIDIAN HERO" },
-  { name: BRAND_FILM, label: "WAVES BRAND FILM" }
+  { name: "obsidian-hero", label: "OBSIDIAN HERO", stageVersion: undefined },
+  { name: BRAND_FILM, label: "WAVES BRAND FILM", stageVersion: BRAND_FILM_STAGE_VERSION },
+  { name: SEAI_REEL, label: "SEAI LAUNCH REEL", stageVersion: SEAI_REEL_STAGE_VERSION }
 ] as const;
+
+/**
+ * The stage version to check a published spec against. This MUST be looked up
+ * per scene: the two stages ship independent markup and independent versions, so
+ * a single build-level constant would report a false mismatch the moment a
+ * second stage with a different version exists (a 9:16 reel at v1 would be
+ * rejected by the 16:9 film's v2).
+ */
+const stageVersionFor = (name: string): number | undefined =>
+  SCENE_LAYERS.find((layer) => layer.name === name)?.stageVersion;
 
 /** Turn a raw engine failure into something a human can act on. */
 function explain(error: unknown, sceneName: string): string {
@@ -75,9 +88,15 @@ export default function GsapLab() {
    * works on the deployed site too — the render worker itself is dev-only
    * middleware and has no server to run on in production.
    */
-  const refreshVideo = useCallback(async () => {
+  const refreshVideo = useCallback(async (sceneName: string | null) => {
+    if (!sceneName) {
+      setVideo(null);
+      return;
+    }
     try {
-      const response = await fetch(`exports/${BRAND_FILM}.json`, { cache: "no-store" });
+      // Manifest is per scene, so a 16:9 film and a 9:16 reel can each ship their
+      // own file and neither claims the other's.
+      const response = await fetch(`exports/${sceneName}.json`, { cache: "no-store" });
       if (!response.ok) {
         setVideo(null);
         return;
@@ -92,7 +111,6 @@ export default function GsapLab() {
   }, []);
 
   const fmt = (ms: number) => `${(ms / 1000).toFixed(1)}s`;
-
   /**
    * The clock is written straight to the DOM. Driving it through React state
    * re-rendered the whole 266-node film tree ~7x a second during playback for
@@ -169,13 +187,15 @@ export default function GsapLab() {
         // the old bundle while gsap-state.json is always fresh, which used to
         // strand the viewer on unresolved selectors. Reload once for this
         // version; if it still disagrees the server is serving something we do
-        // not recognise, so say so instead of looping.
-        if (typeof next.stageVersion === "number" && next.stageVersion !== BRAND_FILM_STAGE_VERSION) {
-          const guardKey = `${RELOAD_GUARD}:${next.stageVersion}`;
+        // not recognise, so say so instead of looping. The expected version is
+        // resolved per scene, since each stage versions its own markup.
+        const expected = stageVersionFor(next.name);
+        if (typeof next.stageVersion === "number" && typeof expected === "number" && next.stageVersion !== expected) {
+          const guardKey = `${RELOAD_GUARD}:${next.name}:${next.stageVersion}`;
           if (sessionStorage.getItem(guardKey)) {
             setNotice({
               tone: "error",
-              text: `Published scene expects stage v${next.stageVersion}, this build is v${BRAND_FILM_STAGE_VERSION}. Hard-reload to update.`
+              text: `Published scene "${next.name}" expects stage v${next.stageVersion}, this build is v${expected}. Hard-reload to update.`
             });
             return;
           }
@@ -212,8 +232,8 @@ export default function GsapLab() {
   }, [live, build]);
 
   useEffect(() => {
-    void refreshVideo();
-  }, [refreshVideo, live?.updatedAt]);
+    void refreshVideo(live?.name ?? null);
+  }, [refreshVideo, live?.updatedAt, live?.name]);
 
   useEffect(() => teardown, [teardown]);
 
@@ -290,7 +310,10 @@ export default function GsapLab() {
       const response = await fetch("/__lab/export-video", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ format: "mp4", orientation: "landscape" })
+        body: JSON.stringify({
+          format: "mp4",
+          orientation: activeName === SEAI_REEL ? "vertical" : "landscape"
+        })
       });
       const body = (await response.json()) as { ok?: boolean; file?: string; error?: string };
       if (!response.ok || !body.ok || !body.file) throw new Error(body.error ?? "Render failed.");
@@ -311,8 +334,9 @@ export default function GsapLab() {
 
   const activeName = live?.spec.name ?? null;
   const isBrandFilm = activeName === BRAND_FILM;
+  const isSeaiReel = activeName === SEAI_REEL;
   const knownScene = SCENE_LAYERS.some((layer) => layer.name === activeName);
-  const videoHref = video?.ok ? video.file : null;
+  const videoHref = video?.ok !== false && video?.file ? video.file : null;
   const videoLabel = video
     ? `${video.width}×${video.height} · ${video.fps}fps ${video.codec} · ${video.container} · ${(video.size / 1_000_000).toFixed(2)} MB`
     : null;
@@ -348,8 +372,12 @@ export default function GsapLab() {
       ) : null}
 
       {/* Every scene layer stays mounted; only the active one is visible. */}
-      <div className={`gsap-stage${isBrandFilm ? " gsap-stage-film" : ""}`} ref={stageRef} aria-label="GSAP stage">
-        <div className="gsap-layer" data-scene="obsidian-hero" data-active={!isBrandFilm}>
+      <div
+        className={`gsap-stage${isBrandFilm ? " gsap-stage-film" : ""}${isSeaiReel ? " gsap-stage-reel" : ""}`}
+        ref={stageRef}
+        aria-label="GSAP stage"
+      >
+        <div className="gsap-layer" data-scene="obsidian-hero" data-active={!isBrandFilm && !isSeaiReel}>
           <div className="ob-bg" aria-hidden="true" />
           <div className="ob-frame">
             <div className="ob-eyebrow">WAVES — MOTION LAB</div>
@@ -370,6 +398,9 @@ export default function GsapLab() {
         <div className="gsap-layer" data-scene={BRAND_FILM} data-active={isBrandFilm}>
           <WavesBrandFilm />
         </div>
+        <div className="gsap-layer" data-scene={SEAI_REEL} data-active={isSeaiReel}>
+          <SeaiLaunchReel />
+        </div>
       </div>
 
       {/* One screen: the film, the transport, and the two things you can do
@@ -387,16 +418,16 @@ export default function GsapLab() {
           )}
           {videoHref && video && videoLabel ? <span className="gsap-meta">{videoLabel}</span> : (
             <span className="gsap-meta">
-              No rendered file yet. <code>pnpm export:brand-film</code> produces one; rendering here needs the local Lab
-              (the render worker is dev-only middleware).
+              No rendered file yet. <code>pnpm export:brand-film</code> / <code>pnpm export:seai-reel</code> produce one;
+              rendering here needs the local Lab (the render worker is dev-only middleware).
             </span>
           )}
         </div>
         <div className="gsap-actions-row">
-          <button type="button" className="gsap-btn" onClick={() => void refreshVideo()} aria-label="Refresh video availability">
+          <button type="button" className="gsap-btn" onClick={() => void refreshVideo(activeName)} aria-label="Refresh video availability">
             ⟳
           </button>
-          <span className="gsap-meta">Rendered from this exact spec — deterministic, 19.000s.</span>
+          <span className="gsap-meta">Rendered from this exact spec — deterministic, {(totalMs / 1000).toFixed(3)}s.</span>
         </div>
       </div>
 
