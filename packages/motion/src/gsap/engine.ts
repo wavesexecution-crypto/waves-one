@@ -46,18 +46,37 @@ export interface GsapPlayback {
   timeline(): gsap.core.Timeline;
 }
 
-let pluginsRegistered = false;
+/**
+ * Plugin availability is tracked per plugin, not as one flag: ScrollTrigger
+ * needs `matchMedia`, which non-browser environments may lack, and a single
+ * shared try/catch would take MotionPathPlugin down with it.
+ */
+const pluginReady = { scrollTrigger: false, motionPath: false, attempted: false };
 
-function ensurePlugins(): boolean {
-  if (pluginsRegistered) return true;
+function ensureScrollTrigger(): boolean {
+  if (pluginReady.scrollTrigger) return true;
+  if (pluginReady.attempted) return false;
+  if (typeof window === "undefined" || typeof document === "undefined") return false;
+  pluginReady.attempted = true;
+  try {
+    gsap.registerPlugin(ScrollTrigger);
+    pluginReady.scrollTrigger = true;
+  } catch {
+    /* environment without matchMedia — scroll/parallax ops degrade */
+  }
+  return pluginReady.scrollTrigger;
+}
+
+function ensureMotionPath(): boolean {
+  if (pluginReady.motionPath) return true;
   if (typeof window === "undefined" || typeof document === "undefined") return false;
   try {
-    gsap.registerPlugin(ScrollTrigger, MotionPathPlugin);
-    pluginsRegistered = true;
-    return true;
+    gsap.registerPlugin(MotionPathPlugin);
+    pluginReady.motionPath = true;
   } catch {
-    return false;
+    /* plugin unavailable — motion-path ops degrade */
   }
+  return pluginReady.motionPath;
 }
 
 function reducedMotionPreferred(mode: "auto" | "on" | "off"): boolean {
@@ -168,7 +187,10 @@ export class GsapEngine {
     this.dispose();
     const ctx = gsap.context(() => {}, scopeEl);
     this.ctx = ctx;
-    const plugins = ensurePlugins();
+    // Register what this environment can support; per-plugin so one failure
+    // (ScrollTrigger needs matchMedia) never disables the others.
+    ensureMotionPath();
+    ensureScrollTrigger();
 
     const tl = gsap.timeline({ paused: true, defaults: { duration: 0.5, ease: "power3.out", ...(spec.defaults ?? {}) } });
     let state: GsapPlaybackState = "IDLE";
@@ -210,6 +232,12 @@ export class GsapEngine {
         }
       }
     });
+
+    // A paused timeline does not render time 0 on its own, so `set` ops that
+    // park an element's initial state never land until the first play().
+    // `render(0)` is the one call that forces that frame (progress/time/
+    // totalProgress short-circuit on an unchanged time).
+    if (!reduced) tl.render(0, false, true);
 
     const playback: GsapPlayback = {
       id: `gsap-${(playbackCounter += 1)}`,
@@ -290,18 +318,38 @@ export class GsapEngine {
     return { each: op.stagger.each, from };
   }
 
+  /**
+   * One animation for `from`/`to` ops. An op with no `from` is a plain `to`:
+   * a `fromTo` with empty start vars still immediate-renders, which can clear
+   * the parked state a preceding `set` op just applied.
+   */
+  private varsAnimation(
+    target: gsap.TweenTarget,
+    from: Record<string, number | string> | undefined,
+    to: Record<string, number | string>,
+    extra: gsap.TweenVars
+  ): gsap.core.Tween {
+    const end = { ...toVars(to), ...extra };
+    if (Object.keys(toVars(from)).length > 0) return gsap.fromTo(target, toVars(from), end);
+    // No `from`: this is a plain `to` and must not immediate-render, or it
+    // overwrites the parked state a preceding `set` op applied before its own
+    // start time is reached.
+    return gsap.to(target, { immediateRender: false, ...end });
+  }
+
   addTween(tl: gsap.core.Timeline, op: GsapTweenOp, position?: gsap.Position): gsap.core.Tween {
-    const tween = gsap.fromTo(op.target, toVars(op.from), { ...toVars(op.to), duration: op.duration ?? 0.5, ease: op.ease ?? "power3.out", delay: op.delay ?? 0 });
+    const tween = this.varsAnimation(op.target, op.from, op.to, { duration: op.duration ?? 0.5, ease: op.ease ?? "power3.out", delay: op.delay ?? 0 });
     tl.add(tween, position ?? ">");
     return tween;
   }
 
   addStagger(tl: gsap.core.Timeline, op: GsapStaggerOp, position?: gsap.Position): gsap.core.Tween {
-    const tween = gsap.fromTo(
-      op.target,
-      toVars(op.from),
-      { ...toVars(op.to), duration: op.duration ?? 0.5, ease: op.ease ?? "power3.out", delay: op.delay ?? 0, stagger: this.staggerVars(op) }
-    );
+    const tween = this.varsAnimation(op.target, op.from, op.to, {
+      duration: op.duration ?? 0.5,
+      ease: op.ease ?? "power3.out",
+      delay: op.delay ?? 0,
+      stagger: this.staggerVars(op)
+    });
     tl.add(tween, position ?? ">");
     return tween;
   }
@@ -314,17 +362,21 @@ export class GsapEngine {
     if (!this.snapshots.has(root)) this.snapshots.set(root, root.innerHTML);
     const parts = splitTextContent(root, op.split ?? "chars");
     if (parts.length === 0) return null;
-    const tween = gsap.fromTo(
-      parts,
-      toVars(op.from),
-      { ...toVars(op.to), duration: op.duration ?? 0.5, ease: op.ease ?? "power3.out", delay: op.delay ?? 0, stagger: op.stagger ?? 0.04 }
-    );
+    // The container is a layout box the chars live inside; a `text` op must
+    // not put the reveal's opacity on it or the chars sit inside a hidden box.
+    // Specs fade the container with their own op when they want it hidden.
+    const tween = this.varsAnimation(parts, op.from, op.to, {
+      duration: op.duration ?? 0.5,
+      ease: op.ease ?? "power3.out",
+      delay: op.delay ?? 0,
+      stagger: op.stagger ?? 0.04
+    });
     tl.add(tween, position ?? ">");
     return tween;
   }
 
   addScrollMotion(tl: gsap.core.Timeline, op: GsapScrollOp, report?: GsapBuildWarnings): gsap.core.Tween | null {
-    if (!ensurePlugins()) {
+    if (!ensureScrollTrigger()) {
       report?.skipped.push(`${op.id}: ScrollTrigger unavailable — scroll op skipped.`);
       return null;
     }
@@ -351,17 +403,13 @@ export class GsapEngine {
   }
 
   addSpring(tl: gsap.core.Timeline, op: GsapSpringOp, position?: gsap.Position): gsap.core.Tween {
-    const tween = gsap.fromTo(
-      op.target,
-      toVars(op.from),
-      { ...toVars(op.to), duration: op.duration ?? 0.8, delay: op.delay ?? 0, ease: springEase(op.spring) }
-    );
+    const tween = this.varsAnimation(op.target, op.from, op.to, { duration: op.duration ?? 0.8, delay: op.delay ?? 0, ease: springEase(op.spring) });
     tl.add(tween, position ?? ">");
     return tween;
   }
 
   addMotionPath(tl: gsap.core.Timeline, op: GsapMotionPathOp, report?: GsapBuildWarnings): gsap.core.Tween | null {
-    if (!ensurePlugins()) {
+    if (!ensureMotionPath()) {
       report?.skipped.push(`${op.id}: MotionPathPlugin unavailable — motion-path op skipped.`);
       return null;
     }
@@ -377,7 +425,7 @@ export class GsapEngine {
   }
 
   addParallax(tl: gsap.core.Timeline, op: GsapParallaxOp, report?: GsapBuildWarnings): gsap.core.Tween | null {
-    if (!ensurePlugins()) {
+    if (!ensureScrollTrigger()) {
       report?.skipped.push(`${op.id}: ScrollTrigger unavailable — parallax op skipped.`);
       return null;
     }

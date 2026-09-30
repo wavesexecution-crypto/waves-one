@@ -121,6 +121,12 @@
   padding: 48px 24px;
 }
 
+/* Brand film: the artboard is the stage, so drop the chrome padding. */
+.gsap-stage-film {
+  padding: 0;
+  background: #04040a;
+}
+
 .ob-bg {
   position: absolute;
   inset: -10%;

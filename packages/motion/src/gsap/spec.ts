@@ -22,6 +22,9 @@ export type GsapOpType =
 /** Timeline position: absolute seconds, relative tokens, or a label. */
 export type GsapPosition = number | "<" | ">" | string;
 
+/** GSAP tween property bag: numbers or CSS strings, no functions. */
+export type GsapVars = Record<string, number | string>;
+
 export interface GsapOpBase {
   /** Stable id for modify/patch/inspect. */
   id: string;
@@ -46,29 +49,29 @@ export interface GsapOpBase {
 
 export interface GsapTweenOp extends GsapOpBase {
   type: "tween";
-  from?: Record<string, number | string>;
-  to: Record<string, number | string>;
+  from?: GsapVars;
+  to: GsapVars;
 }
 
 export interface GsapStaggerOp extends GsapOpBase {
   type: "stagger";
-  from?: Record<string, number | string>;
-  to: Record<string, number | string>;
+  from?: GsapVars;
+  to: GsapVars;
   stagger: number | { each: number; from?: "first" | "last" | "center" | "edges" | "random" };
 }
 
 export interface GsapTextOp extends GsapOpBase {
   type: "text";
   split?: "chars" | "words";
-  from?: Record<string, number | string>;
-  to: Record<string, number | string>;
+  from?: GsapVars;
+  to: GsapVars;
   stagger?: number;
 }
 
 export interface GsapScrollOp extends GsapOpBase {
   type: "scroll";
-  from?: Record<string, number | string>;
-  to: Record<string, number | string>;
+  from?: GsapVars;
+  to: GsapVars;
   /** Scrub smoothing (true = direct scrub). */
   scrub?: boolean | number;
   trigger?: string;
@@ -86,8 +89,8 @@ export type GsapSpringPreset = "gentle" | "snappy" | "deliberate" | "signature" 
 
 export interface GsapSpringOp extends GsapOpBase {
   type: "spring";
-  from?: Record<string, number | string>;
-  to: Record<string, number | string>;
+  from?: GsapVars;
+  to: GsapVars;
   spring: GsapSpringPreset | GsapHouseSpring;
 }
 
@@ -120,7 +123,7 @@ export interface GsapParallaxOp extends GsapOpBase {
 
 export interface GsapSetOp extends GsapOpBase {
   type: "set";
-  to: Record<string, number | string>;
+  to: GsapVars;
 }
 
 export type GsapOp =

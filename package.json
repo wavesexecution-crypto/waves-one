@@ -15,6 +15,7 @@
     "build:lab": "pnpm --filter motion-lab build",
     "dev:lab": "pnpm --filter motion-lab dev",
     "mcp": "pnpm --filter motion-lab-mcp build && node packages/motion-lab-mcp/dist/server.mjs",
+    "brand-film:publish": "pnpm --filter @waves/motion build && pnpm --filter motion-lab-mcp build && node packages/motion-lab-mcp/dist/brand-film-publish.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:mcp": "pnpm --filter motion-lab-mcp test",

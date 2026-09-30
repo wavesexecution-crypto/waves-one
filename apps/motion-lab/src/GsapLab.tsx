@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { GsapEngine, type GsapPlayback, type GsapPlaybackState, type GsapSceneSpec } from "@waves/motion";
+import WavesBrandFilm from "./WavesBrandFilm";
 import "./gsap-lab.css";
 
 interface GsapLiveState {
@@ -108,6 +109,10 @@ export default function GsapLab() {
 
   const fmt = (ms: number) => `${(ms / 1000).toFixed(1)}s`;
 
+  // The brand film owns its own 1600x900 artboard; everything else uses the
+  // default padded OBSIDIAN stage.
+  const isBrandFilm = live?.spec.name === "waves-brand-film-19s";
+
   return (
     <div className="gsap-root">
       <header className="gsap-head">
@@ -128,23 +133,29 @@ export default function GsapLab() {
       {reduced ? <div className="gsap-note" role="note">Reduced motion active — final state shown, ambient/scroll motion off.</div> : null}
       {notice ? <div className="gsap-note" role="note">{notice}</div> : null}
 
-      <div className="gsap-stage" ref={stageRef} aria-label="GSAP stage">
-        <div className="ob-bg" aria-hidden="true" />
-        <div className="ob-frame">
-          <div className="ob-eyebrow">WAVES — MOTION LAB</div>
-          <h2 className="ob-title">WAVES</h2>
-          <p className="ob-sub">Motion, engineered.</p>
-          <div className="ob-visual" aria-hidden="true">
-            <span className="ob-ring ob-ring-1" />
-            <span className="ob-ring ob-ring-2" />
-            <span className="ob-orb" />
-          </div>
-          <div className="ob-meta">
-            <span>ENGINE · GSAP</span>
-            <span>TRACK · DETERMINISTIC</span>
-            <span>SPEC · SERIALIZABLE</span>
-          </div>
-        </div>
+      <div className={`gsap-stage${isBrandFilm ? " gsap-stage-film" : ""}`} ref={stageRef} aria-label="GSAP stage">
+        {isBrandFilm ? (
+          <WavesBrandFilm />
+        ) : (
+          <>
+            <div className="ob-bg" aria-hidden="true" />
+            <div className="ob-frame">
+              <div className="ob-eyebrow">WAVES — MOTION LAB</div>
+              <h2 className="ob-title">WAVES</h2>
+              <p className="ob-sub">Motion, engineered.</p>
+              <div className="ob-visual" aria-hidden="true">
+                <span className="ob-ring ob-ring-1" />
+                <span className="ob-ring ob-ring-2" />
+                <span className="ob-orb" />
+              </div>
+              <div className="ob-meta">
+                <span>ENGINE · GSAP</span>
+                <span>TRACK · DETERMINISTIC</span>
+                <span>SPEC · SERIALIZABLE</span>
+              </div>
+            </div>
+          </>
+        )}
       </div>
 
       {!live ? (

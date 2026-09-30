@@ -89,7 +89,11 @@ export { defaultMotionTokens, cloneTokens, mergeTokens } from "./core/tokens";
 export {
   GSAP_SPEC_VERSION,
   GSAP_SPRING_PRESETS,
+  BRAND_FILM_MS,
+  BRAND_FILM_NAME,
+  BRAND_FILM_SCENES,
   GsapEngine,
+  buildWavesBrandFilm,
   isGsapSceneSpec,
   planTimeline,
   playGsapScene,
@@ -119,6 +123,7 @@ export type {
   GsapTweenOp,
   GsapValidateOptions,
   GsapValidationReport,
+  GsapVars,
   PlannedOp
 } from "./gsap";
 

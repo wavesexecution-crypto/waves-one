@@ -22,8 +22,10 @@ export {
   type GsapSpringPreset,
   type GsapStaggerOp,
   type GsapTextOp,
-  type GsapTweenOp
+  type GsapTweenOp,
+  type GsapVars
 } from "./spec";
+export { BRAND_FILM_MS, BRAND_FILM_NAME, BRAND_FILM_SCENES, buildWavesBrandFilm } from "./brand-film";
 export { planTimeline, type GsapPlan, type PlannedOp } from "./plan";
 export { validateGsapSpec, type GsapIssue, type GsapValidateOptions, type GsapValidationReport } from "./validate";
 export { GsapEngine, playGsapScene, type GsapBuildWarnings, type GsapEngineOptions, type GsapPlayback, type GsapPlaybackState } from "./engine";
