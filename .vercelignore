@@ -1,6 +1,7 @@
 # Runtime outputs and local dev state — never uploaded to Vercel.
-# Kept: public/gsap-state.json + public/motion-state.json (default scenes).
-apps/motion-lab/public/exports
+# Kept: public/gsap-state.json + public/motion-state.json (default scenes)
+#       and public/exports/ (the pre-rendered brand film the Download button
+#       serves — the render worker is dev-only middleware, so the MP4 ships).
 apps/motion-lab/public/ai-motion
 apps/motion-lab/.motion
 scratch

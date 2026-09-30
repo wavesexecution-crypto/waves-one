@@ -879,6 +879,37 @@
   transform: scaleX(0);
 }
 
+/* Video capture mode (?capture=1): the stage is the whole frame, so an
+   exported film is pixel-identical to what the viewer sees. */
+.bf-capture body {
+  overflow: hidden;
+}
+
+.bf-capture .gsap-root {
+  min-height: 100vh;
+  max-width: none;
+  padding: 0;
+}
+
+.bf-capture .gsap-head,
+.bf-capture .gsap-note,
+.bf-capture .gsap-empty,
+.bf-capture .gsap-prompt,
+.bf-capture .gsap-actions {
+  display: none !important;
+}
+
+.bf-capture .gsap-stage {
+  min-height: 100vh;
+  height: 100vh;
+  border: 0;
+}
+
+.bf-capture .bf-frame {
+  height: 100vh;
+  aspect-ratio: auto;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .bf-wordmark,
   .bf-progress,

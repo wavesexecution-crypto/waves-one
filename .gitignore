@@ -23,7 +23,12 @@ apps/motion-lab/.motion/voiceovers/
 apps/motion-lab/.motion/assets/
 apps/motion-lab/.motion/briefs/
 apps/motion-lab/.motion/references/
-apps/motion-lab/public/exports/
+# Ad-hoc render output is scratch, but the brand film ships: the render worker
+# is dev-only middleware, so the MP4 is the Download button on the deployed site.
+# `/*` (not `/`) so the two files below can be re-included.
+apps/motion-lab/public/exports/*
+!apps/motion-lab/public/exports/waves-brand-film-19s.mp4
+!apps/motion-lab/public/exports/waves-brand-film-19s.json
 apps/motion-lab/dist/
 .vercel
 .env*

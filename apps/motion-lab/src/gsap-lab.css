@@ -168,6 +168,50 @@ body {
   color: #fca5a5;
 }
 
+/* Action rail under the stage: take the video, or direct the next one. */
+
+.gsap-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid #27272a;
+}
+
+.gsap-actions-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.gsap-btn-primary {
+  border-color: #fafafa;
+  color: #0a0a0a;
+  background: #fafafa;
+  text-decoration: none;
+  display: inline-block;
+  font-size: 12px;
+  padding: 8px 14px;
+}
+
+.gsap-btn-primary:hover {
+  background: #d4d4d8;
+  border-color: #d4d4d8;
+  color: #0a0a0a;
+}
+
+.gsap-meta {
+  font-size: 11px;
+  color: #71717a;
+  line-height: 1.5;
+}
+
+.gsap-meta code {
+  color: #a1a1aa;
+}
+
 @media (max-width: 640px) {
   .gsap-head {
     flex-direction: column;

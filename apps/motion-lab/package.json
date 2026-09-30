@@ -12,7 +12,8 @@
     "lint": "tsc --noEmit -p tsconfig.json",
     "test:export": "node test/export.mjs",
     "test:shell": "node shellcheck.mjs",
-    "export:film": "node scripts/export-film.mjs"
+    "export:film": "node scripts/export-film.mjs",
+    "export:brand-film": "pnpm --filter @waves/motion build && node scripts/export-brand-film.mjs"
   },
   "dependencies": {
     "@waves/motion": "workspace:*",

@@ -10,6 +10,19 @@ interface GsapLiveState {
   stageVersion?: number;
 }
 
+interface FilmVideo {
+  ok?: boolean;
+  file: string;
+  filename?: string;
+  width: number;
+  height: number;
+  fps: number;
+  codec: string;
+  container: string;
+  durationMs: number;
+  size: number;
+}
+
 const POLL_MS = 1000;
 const BRAND_FILM = "waves-brand-film-19s";
 const RELOAD_GUARD = "waves-gsap-stage-reload";
@@ -54,6 +67,29 @@ export default function GsapLab() {
   const [notice, setNotice] = useState<{ tone: "info" | "error"; text: string } | null>(null);
   const [reduced, setReduced] = useState(false);
   const [sceneLabel, setSceneLabel] = useState<string | null>(null);
+  const [video, setVideo] = useState<FilmVideo | null>(null);
+  const [rendering, setRendering] = useState(false);
+
+  /**
+   * The rendered MP4 is a static file next to the spec, so the Download button
+   * works on the deployed site too — the render worker itself is dev-only
+   * middleware and has no server to run on in production.
+   */
+  const refreshVideo = useCallback(async () => {
+    try {
+      const response = await fetch(`exports/${BRAND_FILM}.json`, { cache: "no-store" });
+      if (!response.ok) {
+        setVideo(null);
+        return;
+      }
+      const parsed = (await response.json()) as Partial<FilmVideo>;
+      // A manifest counts when it names a file and a size; don't depend on an
+      // `ok` flag the renderer may or may not have written.
+      setVideo(parsed && typeof parsed.file === "string" && typeof parsed.size === "number" ? (parsed as FilmVideo) : null);
+    } catch {
+      setVideo(null);
+    }
+  }, []);
 
   const fmt = (ms: number) => `${(ms / 1000).toFixed(1)}s`;
 
@@ -175,6 +211,10 @@ export default function GsapLab() {
     if (live) build(live);
   }, [live, build]);
 
+  useEffect(() => {
+    void refreshVideo();
+  }, [refreshVideo, live?.updatedAt]);
+
   useEffect(() => teardown, [teardown]);
 
   /**
@@ -241,9 +281,41 @@ export default function GsapLab() {
     playbackRef.current?.reverse();
   }, [reduced, stepTo]);
 
+  /** Render on demand — only the local Lab can, since the worker is dev-only. */
+  const renderNow = useCallback(async () => {
+    if (rendering) return;
+    setRendering(true);
+    setNotice({ tone: "info", text: "Rendering the film through the local Lab — this takes a minute." });
+    try {
+      const response = await fetch("/__lab/export-video", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ format: "mp4", orientation: "landscape" })
+      });
+      const body = (await response.json()) as { ok?: boolean; file?: string; error?: string };
+      if (!response.ok || !body.ok || !body.file) throw new Error(body.error ?? "Render failed.");
+      const meta = (await (await fetch(body.file, { method: "HEAD" })).ok)
+        ? (await (await fetch(`${body.file}.json`, { cache: "no-store" }).catch(() => null))?.json() as FilmVideo | null)
+        : null;
+      setVideo(meta);
+      setNotice({ tone: "info", text: "Video ready." });
+    } catch (error) {
+      setNotice({
+        tone: "error",
+        text: `${error instanceof Error ? error.message : String(error)} — rendering needs the local Lab (pnpm dev:lab).`
+      });
+    } finally {
+      setRendering(false);
+    }
+  }, [rendering]);
+
   const activeName = live?.spec.name ?? null;
   const isBrandFilm = activeName === BRAND_FILM;
   const knownScene = SCENE_LAYERS.some((layer) => layer.name === activeName);
+  const videoHref = video?.ok ? video.file : null;
+  const videoLabel = video
+    ? `${video.width}×${video.height} · ${video.fps}fps ${video.codec} · ${video.container} · ${(video.size / 1_000_000).toFixed(2)} MB`
+    : null;
 
   return (
     <div className="gsap-root">
@@ -297,6 +369,34 @@ export default function GsapLab() {
         </div>
         <div className="gsap-layer" data-scene={BRAND_FILM} data-active={isBrandFilm}>
           <WavesBrandFilm />
+        </div>
+      </div>
+
+      {/* One screen: the film, the transport, and the two things you can do
+          with it — take the video, or direct the next one. */}
+      <div className="gsap-actions">
+        <div className="gsap-actions-row">
+          {videoHref ? (
+            <a className="gsap-btn gsap-btn-primary" href={videoHref} download={video?.filename ?? "film.mp4"}>
+              ↓ Download video
+            </a>
+          ) : (
+            <button type="button" className="gsap-btn" onClick={renderNow} disabled={rendering}>
+              {rendering ? "Rendering…" : "↓ Render video"}
+            </button>
+          )}
+          {videoHref && video && videoLabel ? <span className="gsap-meta">{videoLabel}</span> : (
+            <span className="gsap-meta">
+              No rendered file yet. <code>pnpm export:brand-film</code> produces one; rendering here needs the local Lab
+              (the render worker is dev-only middleware).
+            </span>
+          )}
+        </div>
+        <div className="gsap-actions-row">
+          <button type="button" className="gsap-btn" onClick={() => void refreshVideo()} aria-label="Refresh video availability">
+            ⟳
+          </button>
+          <span className="gsap-meta">Rendered from this exact spec — deterministic, 19.000s.</span>
         </div>
       </div>
 
