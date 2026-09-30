@@ -134,7 +134,9 @@ function splitTextContent(target: Element, mode: "chars" | "words"): Element[] {
     const span = document.createElement("span");
     span.className = CHAR_CLASS;
     span.style.display = "inline-block";
-    span.style.willChange = "transform, opacity";
+    // Deliberately no `will-change`: a text reveal can split into 50+ spans and
+    // promoting every one of them for the life of the timeline costs far more
+    // in compositing than the tween saves. GSAP's force3D handles the tween.
     span.textContent = content;
     target.appendChild(span);
     out.push(span);

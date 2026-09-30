@@ -42,17 +42,30 @@ export default function GsapLab() {
   const stageRef = useRef<HTMLDivElement>(null);
   const engineRef = useRef<GsapEngine | null>(null);
   const playbackRef = useRef<GsapPlayback | null>(null);
+  const clockRef = useRef<HTMLSpanElement>(null);
   const liveRef = useRef<string | null>(null);
   const scenesRef = useRef<Array<{ label: string; at: number }>>([]);
   /** Reduced-motion transport is a stepper, not a player. */
   const stepRef = useRef(0);
+  const totalMsRef = useRef(0);
   const [live, setLive] = useState<GsapLiveState | null>(null);
   const [state, setState] = useState<GsapPlaybackState>("IDLE");
   const [totalMs, setTotalMs] = useState(0);
-  const totalMsRef = useRef(0);
-  const [positionMs, setPositionMs] = useState(0);
   const [notice, setNotice] = useState<{ tone: "info" | "error"; text: string } | null>(null);
   const [reduced, setReduced] = useState(false);
+  const [sceneLabel, setSceneLabel] = useState<string | null>(null);
+
+  const fmt = (ms: number) => `${(ms / 1000).toFixed(1)}s`;
+
+  /**
+   * The clock is written straight to the DOM. Driving it through React state
+   * re-rendered the whole 266-node film tree ~7x a second during playback for
+   * a string that changes once per frame.
+   */
+  const writeClock = useCallback((ms: number) => {
+    const node = clockRef.current;
+    if (node) node.textContent = `${fmt(ms)} / ${fmt(totalMsRef.current)}`;
+  }, []);
 
   const teardown = useCallback(() => {
     playbackRef.current = null;
@@ -79,12 +92,13 @@ export default function GsapLab() {
           .sort((a, b) => a.at - b.at);
         totalMsRef.current = playback.totalMs;
         setTotalMs(playback.totalMs);
-        setPositionMs(0);
+        setSceneLabel(null);
         setReduced(report.reducedMotionApplied);
         setState(playback.state());
+        writeClock(0);
         playback.onStateChange((next) => {
           setState(next);
-          setPositionMs(Math.min(Math.round(playback.time() * 1000), totalMsRef.current));
+          writeClock(Math.min(Math.round(playback.time() * 1000), totalMsRef.current));
         });
         if (report.skipped.length > 0) {
           setNotice({ tone: "info", text: `${report.skipped.length} op(s) skipped (${report.skipped[0].slice(0, 90)})` });
@@ -95,14 +109,14 @@ export default function GsapLab() {
         }
       } catch (error) {
         scenesRef.current = [];
-        setTotalMs(0);
         totalMsRef.current = 0;
-        setPositionMs(0);
+        setTotalMs(0);
         setState("IDLE");
+        writeClock(0);
         setNotice({ tone: "error", text: explain(error, scene.name) });
       }
     },
-    [teardown]
+    [teardown, writeClock]
   );
 
   useEffect(() => {
@@ -147,23 +161,21 @@ export default function GsapLab() {
       const playback = playbackRef.current;
       if (playback && (playback.state() === "PLAYING")) {
         // Ambient loops run forever by design; the clock caps at the plan total.
-        setPositionMs(Math.min(Math.round(playback.time() * 1000), totalMsRef.current));
+        writeClock(Math.min(Math.round(playback.time() * 1000), totalMsRef.current));
       }
-    }, 150);
+    }, 100);
     return () => {
       stopped = true;
       window.clearInterval(timer);
       window.clearInterval(position);
     };
-  }, []);
+  }, [writeClock]);
 
   useEffect(() => {
     if (live) build(live);
   }, [live, build]);
 
   useEffect(() => teardown, [teardown]);
-
-  const fmt = (ms: number) => `${(ms / 1000).toFixed(1)}s`;
 
   /**
    * Under reduced motion the engine parks the scene on its final frame and will
@@ -189,12 +201,14 @@ export default function GsapLab() {
     const totalSeconds = totalMsRef.current / 1000;
     const target = next === undefined ? totalSeconds : Math.min(start + 0.5, Math.max(start, next - 0.05));
     playback.progress(totalSeconds > 0 ? Math.min(1, target / totalSeconds) : 0);
-    setPositionMs(Math.round(playback.time() * 1000));
+    writeClock(Math.round(playback.time() * 1000));
+    setSceneLabel(scenes[clamped].label);
     setState(clamped >= scenes.length - 1 ? "COMPLETED" : "PAUSED");
-  }, []);
+  }, [writeClock]);
 
   const onPlay = useCallback(() => {
     if (!reduced) {
+      setSceneLabel(null);
       playbackRef.current?.play();
       return;
     }
@@ -215,6 +229,7 @@ export default function GsapLab() {
       stepTo(0);
       return;
     }
+    setSceneLabel(null);
     playbackRef.current?.restart();
   }, [reduced, stepTo]);
 
@@ -229,7 +244,6 @@ export default function GsapLab() {
   const activeName = live?.spec.name ?? null;
   const isBrandFilm = activeName === BRAND_FILM;
   const knownScene = SCENE_LAYERS.some((layer) => layer.name === activeName);
-  const sceneLabel = reduced ? scenesRef.current[stepRef.current]?.label ?? null : null;
 
   return (
     <div className="gsap-root">
@@ -244,7 +258,7 @@ export default function GsapLab() {
           <button type="button" className="gsap-btn" onClick={onPause} aria-label={reduced ? "Hold" : "Pause"}>❚❚</button>
           <button type="button" className="gsap-btn" onClick={onRestart} aria-label={reduced ? "First scene" : "Restart"}>⟲</button>
           <button type="button" className="gsap-btn" onClick={onReverse} aria-label={reduced ? "Previous scene" : "Reverse"}>↩</button>
-          <span className="gsap-time">{fmt(positionMs)} / {fmt(totalMs)}</span>
+          <span className="gsap-time" ref={clockRef}>{fmt(0)} / {fmt(totalMs)}</span>
         </div>
       </header>
 

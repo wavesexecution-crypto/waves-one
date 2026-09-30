@@ -1,9 +1,11 @@
 /*
  * WAVES brand film — artboard layout and type only.
  *
- * No `animation`, no `transition`, no keyframes: every moving pixel is driven
- * by the GSAP engine through the Motion Spec. What lives here is the fixed
- * 1600x900 composition the spec's pixel choreography assumes, plus the type.
+ * No `animation`, no `transition`, no keyframes, and deliberately no
+ * `will-change`: every moving pixel is driven by the GSAP engine through the
+ * Motion Spec, and GSAP already composites transforms. Promoting all ~150
+ * animated nodes with `will-change` was measured to make playback visibly
+ * stutter on a real GPU — far worse than letting the compositor decide.
  */
 
 .bf-frame {
@@ -101,13 +103,11 @@
   line-height: 1.1;
   color: #ffffff;
   white-space: nowrap;
-  will-change: transform, opacity;
 }
 
 .bf-rule {
   height: 1px;
   transform-origin: left center;
-  will-change: transform, opacity;
 }
 
 .bf-rule-1 {
@@ -155,7 +155,6 @@
   text-align: center;
   font-size: 15px;
   color: rgba(242, 242, 246, 0.5);
-  will-change: transform, opacity;
 }
 
 .bf-s2-label {
@@ -164,7 +163,6 @@
   left: 300px;
   font-size: 13px;
   color: var(--bf-accent);
-  will-change: transform, opacity;
 }
 
 .bf-statement {
@@ -177,7 +175,6 @@
   line-height: 1.24;
   letter-spacing: -0.012em;
   color: #ffffff;
-  will-change: transform, opacity;
 }
 
 .bf-scene-2 .bf-rule-2 {
@@ -194,7 +191,6 @@
   left: 130px;
   font-size: 13px;
   color: var(--bf-accent);
-  will-change: transform, opacity;
 }
 
 .bf-hub {
@@ -207,7 +203,6 @@
   border-radius: 50%;
   display: grid;
   place-items: center;
-  will-change: transform, opacity;
 }
 
 .bf-hub-mark {
@@ -225,7 +220,6 @@
   height: 1px;
   background: rgba(242, 242, 246, 0.24);
   transform-origin: left center;
-  will-change: transform, opacity;
 }
 
 .bf-bus {
@@ -236,7 +230,6 @@
   height: 520px;
   background: rgba(242, 242, 246, 0.24);
   transform-origin: center top;
-  will-change: transform, opacity;
 }
 
 .bf-tap {
@@ -246,7 +239,6 @@
   height: 1px;
   background: rgba(242, 242, 246, 0.24);
   transform-origin: left center;
-  will-change: transform, opacity;
 }
 
 .bf-tap-1 {
@@ -270,7 +262,6 @@
   margin-top: -4px;
   border-radius: 50%;
   background: var(--bf-accent);
-  will-change: transform, opacity;
 }
 
 .bf-node {
@@ -280,7 +271,6 @@
   padding: 18px 22px;
   border: 1px solid rgba(242, 242, 246, 0.14);
   background: rgba(10, 11, 20, 0.72);
-  will-change: transform, opacity;
 }
 
 .bf-node-1 {
@@ -300,7 +290,6 @@
   font-weight: 400;
   letter-spacing: 0.03em;
   color: #ffffff;
-  will-change: transform, opacity;
 }
 
 .bf-node-role {
@@ -310,7 +299,6 @@
   letter-spacing: 0.18em;
   text-transform: uppercase;
   color: rgba(242, 242, 246, 0.44);
-  will-change: transform, opacity;
 }
 
 /* ── WAVES ONE: panel, three verbs, live console ─────────────────────── */
@@ -321,7 +309,6 @@
   left: 130px;
   font-size: 13px;
   color: var(--bf-accent);
-  will-change: transform, opacity;
 }
 
 .bf-one-panel {
@@ -331,7 +318,6 @@
   width: 1340px;
   height: 520px;
   border: 1px solid rgba(242, 242, 246, 0.1);
-  will-change: transform, opacity;
 }
 
 .bf-one-line {
@@ -342,7 +328,6 @@
   letter-spacing: -0.02em;
   line-height: 1.1;
   color: #ffffff;
-  will-change: transform, opacity;
 }
 
 .bf-one-line:nth-of-type(1) {
@@ -366,7 +351,6 @@
   border: 1px solid rgba(242, 242, 246, 0.14);
   background: rgba(6, 7, 14, 0.86);
   overflow: hidden;
-  will-change: transform, opacity;
 }
 
 .bf-console-bar {
@@ -426,7 +410,6 @@
   width: 100%;
   height: 1px;
   background: linear-gradient(90deg, rgba(111, 140, 255, 0) 0%, rgba(111, 140, 255, 0.85) 50%, rgba(111, 140, 255, 0) 100%);
-  will-change: transform, opacity;
 }
 
 .bf-caret {
@@ -436,7 +419,6 @@
   width: 9px;
   height: 15px;
   background: var(--bf-accent);
-  will-change: opacity;
 }
 
 /* ── SEAI: a page that assembles itself ──────────────────────────────── */
@@ -447,7 +429,6 @@
   left: 130px;
   font-size: 13px;
   color: var(--bf-accent);
-  will-change: transform, opacity;
 }
 
 .bf-web {
@@ -458,7 +439,6 @@
   height: 508px;
   border: 1px solid rgba(242, 242, 246, 0.14);
   background: rgba(7, 8, 15, 0.82);
-  will-change: transform, opacity;
 }
 
 .bf-web-bar {
@@ -475,7 +455,6 @@
   height: 9px;
   border-radius: 50%;
   background: rgba(242, 242, 246, 0.2);
-  will-change: transform, opacity;
 }
 
 .bf-web-url {
@@ -488,7 +467,6 @@
   letter-spacing: 0.1em;
   color: rgba(242, 242, 246, 0.42);
   transform-origin: left center;
-  will-change: transform, opacity;
 }
 
 .bf-web-nav {
@@ -503,7 +481,6 @@
   letter-spacing: 0.16em;
   text-transform: uppercase;
   color: rgba(242, 242, 246, 0.42);
-  will-change: transform, opacity;
 }
 
 .bf-web-hero {
@@ -515,7 +492,6 @@
   margin-bottom: 12px;
   background: rgba(242, 242, 246, 0.82);
   transform-origin: left center;
-  will-change: transform, opacity;
 }
 
 .bf-web-hero-short {
@@ -540,7 +516,6 @@
   height: 108px;
   padding: 14px;
   border: 1px solid rgba(242, 242, 246, 0.1);
-  will-change: transform, opacity;
 }
 
 .bf-web-card-bar {
@@ -568,7 +543,6 @@
   height: 100%;
   background: var(--bf-accent);
   transform-origin: left center;
-  will-change: transform, opacity;
 }
 
 .bf-seai-lines {
@@ -584,7 +558,6 @@
   font-weight: 300;
   letter-spacing: -0.01em;
   color: #ffffff;
-  will-change: transform, opacity;
 }
 
 /* ── WAVES Motion: six concepts, six live demonstrations ─────────────── */
@@ -595,7 +568,6 @@
   left: 130px;
   font-size: 13px;
   color: var(--bf-accent);
-  will-change: transform, opacity;
 }
 
 .bf-motion-title {
@@ -606,7 +578,6 @@
   font-weight: 300;
   letter-spacing: -0.028em;
   color: #ffffff;
-  will-change: transform, opacity;
 }
 
 .bf-demos {
@@ -629,7 +600,6 @@
 .bf-d-label {
   font-size: 11px;
   color: rgba(242, 242, 246, 0.44);
-  will-change: transform, opacity;
 }
 
 .bf-d1,
@@ -652,7 +622,6 @@
   height: 1px;
   background: rgba(242, 242, 246, 0.28);
   transform-origin: left center;
-  will-change: transform, opacity;
 }
 
 .bf-d1-tick {
@@ -661,7 +630,6 @@
   width: 1px;
   height: 13px;
   background: rgba(242, 242, 246, 0.3);
-  will-change: transform, opacity;
 }
 
 .bf-d1-tick:nth-of-type(1) { left: 0; }
@@ -677,7 +645,6 @@
   width: 2px;
   height: 22px;
   background: var(--bf-accent);
-  will-change: transform, opacity;
 }
 
 /* text reveal */
@@ -691,7 +658,6 @@
   font-weight: 300;
   letter-spacing: 0.2em;
   color: #ffffff;
-  will-change: transform, opacity;
 }
 
 /* stagger */
@@ -706,7 +672,6 @@
   height: 92px;
   background: rgba(242, 242, 246, 0.62);
   transform-origin: center bottom;
-  will-change: transform, opacity;
 }
 
 .bf-d3-bar:nth-of-type(2) { height: 64px; }
@@ -719,7 +684,6 @@
   position: absolute;
   left: 0;
   height: 1px;
-  will-change: transform, opacity;
 }
 
 .bf-d4-layer-1 {
@@ -751,7 +715,6 @@
   height: 46px;
   border: 1px solid var(--bf-accent);
   background: rgba(111, 140, 255, 0.18);
-  will-change: transform, opacity;
 }
 
 /* scroll motion */
@@ -766,7 +729,6 @@
   flex-direction: column;
   gap: 10px;
   padding: 6px 14px;
-  will-change: transform;
 }
 
 .bf-d6-row {
@@ -786,7 +748,6 @@
   left: 130px;
   font-size: 13px;
   color: var(--bf-accent);
-  will-change: transform, opacity;
 }
 
 .bf-con {
@@ -797,7 +758,6 @@
   letter-spacing: 0.02em;
   color: #ffffff;
   white-space: nowrap;
-  will-change: transform, opacity;
 }
 
 .bf-con-1 {
@@ -819,7 +779,6 @@
   font-size: 30px;
   font-weight: 200;
   color: var(--bf-accent);
-  will-change: transform, opacity;
 }
 
 .bf-plus-2 {
@@ -835,7 +794,6 @@
   margin: -9px 0 0 -9px;
   border: 1px solid var(--bf-accent);
   border-radius: 50%;
-  will-change: transform, opacity;
 }
 
 /* ── final lockup ────────────────────────────────────────────────────── */
@@ -853,7 +811,6 @@
   font-weight: 300;
   letter-spacing: 0.12em;
   color: rgba(242, 242, 246, 0.86);
-  will-change: transform, opacity;
 }
 
 .bf-scene-8 .bf-rule-3 {
@@ -873,7 +830,6 @@
 
 .bf-meta span {
   margin: 0 22px;
-  will-change: transform, opacity;
 }
 
 /* ── readout + progress ──────────────────────────────────────────────── */
@@ -890,7 +846,6 @@
   top: 0;
   right: 0;
   white-space: nowrap;
-  will-change: opacity;
 }
 
 .bf-num-1 { top: 0; }
@@ -922,7 +877,6 @@
   background: var(--bf-accent);
   transform-origin: left center;
   transform: scaleX(0);
-  will-change: transform;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -930,6 +884,5 @@
   .bf-progress,
   .bf-scan,
   .bf-d6-inner {
-    will-change: auto;
   }
 }
