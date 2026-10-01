@@ -173,12 +173,20 @@ const mp4Name = `${scene}.mp4`;
         "-ss", leadSec.toFixed(2),
         "-i", webmPath,
         "-t", trimSec.toFixed(3),
-        "-vf", `fps=60,scale=${WIDTH}:${HEIGHT}`,
-        "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "18", "-preset", "medium",
-        "-movflags", "+faststart", "-an",
+        "-vf", `fps=60,scale=${WIDTH}:${HEIGHT}:flags=lanczos`,
+        "-c:v", "libx264",
+        "-pix_fmt", "yuv420p",
+        "-crf", "15",
+        "-preset", "veryslow",
+        "-profile:v", "high",
+        "-level:v", "5.1",
+        "-tune", "animation",
+        "-x264-params", "keyint=60:min-keyint=1:bframes=3:ref=5:subme=9:me_range=24:rc_lookahead=60:bframe_bias=0",
+        "-movflags", "+faststart",
+        "-an",
         mp4Path
       ],
-      { timeout: 300_000 }
+      { timeout: 600_000 }
     );
     writeFileSync(
       path.join(outDir, `${scene}.json`),
