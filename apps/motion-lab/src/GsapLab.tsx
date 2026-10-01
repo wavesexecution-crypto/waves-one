@@ -189,7 +189,7 @@ const unsubscribeRef = useRef<(() => void) | null>(null);
     const poll = async () => {
       if (stopped) return;
       try {
-        const response = await fetch("gsap-state.json", { cache: "no-store" });
+        const response = await fetch(`gsap-state.json?v=${Date.now()}`, { cache: "no-store" });
         if (!response.ok) return;
         const next = (await response.json()) as GsapLiveState;
         if (!next?.spec || !Array.isArray(next.spec.ops)) return;

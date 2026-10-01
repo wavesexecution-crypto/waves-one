@@ -42,8 +42,7 @@ const SCENES = {
   "seai-launch-reel": { width: 1080, height: 1920, fps: 30, artboard: ".sr-artboard" }
 };
 
-const outputFps = Number(argValue("--fps", "60")) || 60;
-const TAIL_SEC = 1.2;
+const TAIL_SEC = 2.0;
 
 function findChromium() {
   const override = process.env.MOTION_LAB_CHROMIUM?.trim();
@@ -113,7 +112,8 @@ function filmDurationMs() {
 async function main() {
   const target = SCENES[scene];
   if (!target) throw new Error(`Unknown scene "${scene}". Known: ${Object.keys(SCENES).join(", ")}`);
-  const { width: WIDTH, height: HEIGHT, artboard } = target;
+  const { width: WIDTH, height: HEIGHT, fps: SCENE_FPS, artboard } = target;
+  const outputFps = Number(argValue("--fps", String(target.fps))) || target.fps;
   const durationMs = filmDurationMs();
   const recordSec = durationMs / 1000 + TAIL_SEC;
   console.log(`scene     ${scene}`);
@@ -127,7 +127,7 @@ async function main() {
     const context = await browser.newContext({
       viewport: { width: WIDTH, height: HEIGHT },
       deviceScaleFactor: 1,
-      recordVideo: { dir: tmp, size: { width: WIDTH, height: HEIGHT } }
+      recordVideo: { dir: tmp, size: { width: WIDTH, height: HEIGHT }, fps: outputFps }
     });
     const page = await context.newPage();
     const started = Date.now();
@@ -163,16 +163,17 @@ async function main() {
     mkdirSync(outDir, { recursive: true });
     const webmPath = path.join(tmp, "raw.webm");
     copyFileSync(src, webmPath);
-    const mp4Name = `${scene}.mp4`;
+const mp4Name = `${scene}.mp4`;
     const mp4Path = path.join(outDir, mp4Name);
+    const trimSec = durationMs / 1000 + 1 / 30; // 15.033... to include the 450th frame at 30fps
     execFileSync(
       "ffmpeg",
       [
         "-y", "-v", "error",
         "-ss", leadSec.toFixed(2),
         "-i", webmPath,
-        "-t", (durationMs / 1000).toFixed(3),
-        "-vf", `fps=${outputFps},scale=${WIDTH}:${HEIGHT}`,
+        "-t", trimSec.toFixed(3),
+        "-vf", `fps=60,scale=${WIDTH}:${HEIGHT}`,
         "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "18", "-preset", "medium",
         "-movflags", "+faststart", "-an",
         mp4Path

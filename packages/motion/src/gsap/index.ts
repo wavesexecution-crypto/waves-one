@@ -27,10 +27,10 @@ export {
 } from "./spec";
 export { BRAND_FILM_MS, BRAND_FILM_NAME, BRAND_FILM_SCENES, buildWavesBrandFilm } from "./brand-film";
 export {
+  SEAI_REEL_DEMOS,
   SEAI_REEL_H,
   SEAI_REEL_MS,
   SEAI_REEL_NAME,
-  SEAI_REEL_ORIENTATION,
   SEAI_REEL_SCENES,
   SEAI_REEL_W,
   buildSeaiLaunchReel

@@ -13,7 +13,7 @@ import { buildGsapScene, publishGsapLive, saveGsapSpec, testGsapSpec } from "./g
 import { SEAI_REEL_MS, SEAI_REEL_SCENES, buildSeaiLaunchReel } from "@waves/motion";
 
 /** Keep in sync with SEAI_REEL_STAGE_VERSION in apps/motion-lab/src/SeaiLaunchReel.tsx. */
-const SEAI_REEL_STAGE_VERSION = 1;
+const SEAI_REEL_STAGE_VERSION = 2;
 
 const paths = resolvePaths(process.cwd());
 const built = buildSeaiLaunchReel();

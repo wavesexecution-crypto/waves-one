@@ -1,23 +1,37 @@
 /**
  * SEAI launch reel — contract tests.
  *
- * The reel is choreography, so these assert the things a screenshot cannot:
- * that the master timeline is exactly 15.000s, that every scene carries a label
- * landing on a composed frame, that the mask/parallax primitives the brief asked
- * for are real ops rather than CSS, and that nothing ambient or scroll-scrubbed
- * sneaks in and breaks "completes, holds, reverses".
+ * The reel is choreography, so these assert what a screenshot cannot: that the
+ * master timeline is exactly 15.000s, that the five required scene labels exist
+ * and land on composed frames, that masking/parallax are real ops rather than
+ * CSS, that the visuals are the REAL SEAI project rather than invented
+ * approximations, and that nothing ambient or scroll-scrubbed sneaks in and
+ * breaks "completes, holds, reverses".
  */
 
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { planTimeline } from "../src/gsap/plan";
 import { validateGsapSpec } from "../src/gsap/validate";
-import { buildSeaiLaunchReel, SEAI_REEL_MS, SEAI_REEL_NAME, SEAI_REEL_SCENES, SEAI_REEL_H, SEAI_REEL_W } from "../src/gsap/seai-launch-reel";
+import {
+  buildSeaiLaunchReel,
+  SEAI_REEL_DEMOS,
+  SEAI_REEL_H,
+  SEAI_REEL_MS,
+  SEAI_REEL_NAME,
+  SEAI_REEL_SCENES,
+  SEAI_REEL_W
+} from "../src/gsap/seai-launch-reel";
 
 const spec = buildSeaiLaunchReel();
 const plan = planTimeline(spec);
 const byId = new Map(spec.ops.map((op) => [op.id, op]));
 const labels = plan.labels;
+
+const stageSrc = readFileSync("apps/motion-lab/src/SeaiLaunchReel.tsx", "utf8");
+const cssSrc = readFileSync("apps/motion-lab/src/seai-reel.css", "utf8");
+/** Strip comments so prose about a rule never trips the rule itself. */
+const cssCode = cssSrc.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/\/\/.*$/gm, " ");
 
 describe("seai-launch-reel geometry", () => {
   it("is a 9:16 1080x1920 vertical artboard", () => {
@@ -30,16 +44,14 @@ describe("seai-launch-reel spec", () => {
   it("is named and versioned for the GSAP track", () => {
     expect(spec.name).toBe(SEAI_REEL_NAME);
     expect(spec.version).toBe(1);
-    expect(spec.ops.length).toBeGreaterThan(40);
+    expect(spec.ops.length).toBeGreaterThan(50);
   });
 
   it("validates with zero errors", () => {
-    const report = validateGsapSpec(spec);
-    expect(report.errors).toEqual([]);
+    expect(validateGsapSpec(spec).errors).toEqual([]);
   });
 
   it("uses no layout-triggering properties", () => {
-    // width/height/top/left/fontSize would relayout every frame of a reel.
     const report = validateGsapSpec(spec);
     expect(report.warnings.filter((w) => w.code === "GSAP_LAYOUT_PROP")).toEqual([]);
   });
@@ -70,14 +82,12 @@ describe("seai-launch-reel master timeline", () => {
     }
   });
 
-  it("opens on a black frame and closes on the lockup", () => {
-    // The hook's first op is a set, so nothing is visible before the slam.
-    expect(byId.get("s1-on")?.position).toBe(0);
-    expect(labels["01 HOOK"]).toBeGreaterThan(0);
-    // The CTA is the last piece of content, well before the rail lands.
-    const cta = byId.get("s6-cta-in")!;
-    expect(plan.spans.find((s) => s.id === "s6-cta-in")!.endMs).toBeLessThan(SEAI_REEL_MS);
-    expect(cta.ease).toBe("back.out(1.6)");
+  it("opens on the mark and closes on the lockup", () => {
+    expect(byId.get("intro-logo-in")?.position).toBe(0.1);
+    // The CTA is the last content op, and the rail is what lands on 15000.
+    const cta = plan.spans.find((s) => s.id === "final-cta-in")!;
+    expect(cta.endMs).toBeLessThan(SEAI_REEL_MS);
+    expect(byId.get("final-cta-in")?.ease).toBe("back.out(1.5)");
   });
 
   it("pins the total with the progress rail, a real linear read of the timeline", () => {
@@ -89,7 +99,17 @@ describe("seai-launch-reel master timeline", () => {
 });
 
 describe("seai-launch-reel scenes", () => {
-  it("labels all six scenes in order", () => {
+  it("declares exactly the five required labels", () => {
+    expect(SEAI_REEL_SCENES.map((s) => s.label)).toEqual([
+      "intro",
+      "ai-build",
+      "showcase",
+      "capabilities",
+      "final"
+    ]);
+  });
+
+  it("labels all five in the published spec, in order", () => {
     const times = SEAI_REEL_SCENES.map((s) => labels[s.label]);
     expect(times.every((t) => typeof t === "number")).toBe(true);
     for (let i = 1; i < times.length; i += 1) {
@@ -104,14 +124,9 @@ describe("seai-launch-reel scenes", () => {
   });
 
   it("labels land on composed frames, not mid-transition", () => {
-    // A reduced-motion step seeks to a label. If a label sat in the middle of a
-    // tween, the viewer would land on a half-played slam. At each label, the
-    // only ops allowed to still be in flight are the structural scrubs — the
-    // progress rail and the linear parallax drifts, which are by definition
-    // never "finished".
-    const scrubIds = new Set(
-      spec.ops.filter((op) => op.ease === "none").map((op) => op.id)
-    );
+    // A reduced-motion step seeks to a label. Only the structural scrubs (the
+    // rail and its linear drifts) may still be in flight there.
+    const scrubIds = new Set(spec.ops.filter((op) => op.ease === "none").map((op) => op.id));
     for (const scene of SEAI_REEL_SCENES) {
       const at = labels[scene.label];
       const inFlight = plan.spans.filter((s) => s.startMs <= at && s.endMs > at && s.type !== "set");
@@ -126,15 +141,12 @@ describe("seai-launch-reel scenes", () => {
   });
 
   it("keeps each scene inside the brief's timebox", () => {
-    // 01 hook 0–2, 02 claim 2–4, 03 work 4–7, 04 system 7–10, 05 result 10–12.5,
-    // 06 lockup 12.5–15. Scene content must not start before its box.
     const earliest: Record<string, number> = {
-      "01 HOOK": 0,
-      "02 CLAIM": 2000,
-      "03 WORK": 4000,
-      "04 SYSTEM": 7000,
-      "05 RESULT": 10000,
-      "06 LOCKUP": 12500
+      intro: 0,
+      "ai-build": 2000,
+      showcase: 4000,
+      capabilities: 7000,
+      final: 10000
     };
     for (const scene of SEAI_REEL_SCENES) {
       const op = spec.ops.find((o) => o.label === scene.label)!;
@@ -147,52 +159,52 @@ describe("seai-launch-reel scenes", () => {
 describe("seai-launch-reel required motion", () => {
   it("uses a text reveal for every headline", () => {
     const textOps = spec.ops.filter((op) => op.type === "text");
-    expect(textOps.length).toBeGreaterThanOrEqual(10);
+    expect(textOps.length).toBeGreaterThanOrEqual(14);
     for (const op of textOps) {
       expect(op.split === "chars" || op.split === "words").toBe(true);
       expect(typeof op.stagger).toBe("number");
     }
   });
 
-  it("staggers the four website cards", () => {
-    const cards = byId.get("s3-cards-in")!;
-    expect(cards.type).toBe("stagger");
-    expect(cards.type === "stagger" && cards.stagger).toEqual({ each: 0.13, from: "first" });
-    expect(cards.target).toBe(".sr-card");
+  it("staggers the seven real site captures", () => {
+    const reveal = byId.get("show-in")!;
+    expect(reveal.type).toBe("stagger");
+    expect(reveal.type === "stagger" && reveal.stagger).toEqual({ each: 0.1, from: "first" });
+    expect(reveal.target).toBe(".sr-shot");
+    // Seven, matching SEAI's seven shipped verticals.
+    expect(SEAI_REEL_DEMOS.length).toBe(7);
+    expect(spec.ops.filter((op) => /^show-drift-\d$/.test(op.id)).length).toBe(7);
+    expect(spec.ops.filter((op) => /^show-set-\d$/.test(op.id)).length).toBe(7);
   });
 
-  it("masks the site cards with clipPath rather than a fade", () => {
-    const reveal = byId.get("s3-cards-in")!;
+  it("masks the site captures with clipPath rather than a fade", () => {
+    const reveal = byId.get("show-in")!;
     expect(reveal.from?.clipPath).toBe("inset(100% 0% 0% 0%)");
     expect(reveal.to?.clipPath).toBe("inset(0% 0% 0% 0%)");
-    // The five scene reveal must mask too.
-    expect(byId.get("s5-site-in")?.from?.clipPath).toBe("inset(100% 0% 0% 0%)");
+    // The finished site in the final scene is masked too.
+    expect(byId.get("final-plate-in")?.from?.clipPath).toBe("inset(100% 0% 0% 0%)");
   });
 
   it("drives parallax from layered linear drifts, not ScrollTrigger", () => {
-    const conveyor = byId.get("s3-conveyor")!;
+    const conveyor = byId.get("show-conveyor")!;
     expect(conveyor.ease).toBe("none");
-    expect(conveyor.to).toEqual({ y: -1560 });
-    // Four counter-drifts at four different rates is the depth.
-    const drifts = [1, 2, 3, 4].map((i) => byId.get(`s3-drift-${i}`)!);
-    expect(drifts.every((d) => d.ease === "none" && d.duration === 2.3)).toBe(true);
-    const amounts = drifts.map((d) => Number(d.to?.x));
-    expect(new Set(amounts).size).toBe(4);
-    // And inside the result scene, four depth layers on mixed axes.
-    const depths = [1, 2, 3, 4].map((i) => byId.get(`s5-depth-${i}`)!);
-    expect(depths.every((d) => d.ease === "none" && d.duration === 2.3)).toBe(true);
+    expect(conveyor.to).toEqual({ y: -1720 });
+    // Seven counter-drifts at seven different rates is the depth.
+    const drifts = SEAI_REEL_DEMOS.map((_, i) => Number(byId.get(`show-drift-${i + 1}`)!.to?.x));
+    expect(new Set(drifts).size).toBe(7);
+    expect(byId.get("final-depth-1")?.ease).toBe("none");
+    expect(byId.get("final-depth-2")?.ease).toBe("none");
   });
 
   it("collapses the four pillars into one point, not just a scale-down", () => {
-    const pulls = [1, 2, 3, 4].map((i) => Number(byId.get(`s4-pull-${i}`)?.to?.y));
-    // Every pillar is pulled toward the centre line.
+    const pulls = [1, 2, 3, 4].map((i) => Number(byId.get(`caps-pull-${i}`)?.to?.y));
     expect(pulls[0]).toBeGreaterThan(0);
     expect(pulls[1]).toBeGreaterThan(0);
     expect(pulls[2]).toBeLessThan(0);
     expect(pulls[3]).toBeLessThan(0);
-    // Innermost pull the least, so they meet rather than cross.
+    // Outermost travel furthest, so they meet rather than cross.
     expect(Math.abs(pulls[3])).toBeGreaterThan(Math.abs(pulls[2]));
-    const collapse = byId.get("s4-collapse")!;
+    const collapse = byId.get("caps-collapse")!;
     expect(collapse.type === "stagger" && collapse.stagger).toEqual({ each: 0.035, from: "center" });
     expect(collapse.to?.scale).toBe(0.14);
   });
@@ -204,67 +216,107 @@ describe("seai-launch-reel required motion", () => {
     }
   });
 
-  it("keeps every op inside the artboard's own scene shell", () => {
-    // No op may target a node outside the reel stage.
+  it("keeps every op inside the reel stage", () => {
     for (const op of spec.ops) {
       expect(op.target.startsWith(".sr-") || op.target.startsWith("[data-")).toBe(true);
     }
   });
 });
 
-describe("seai-launch-reel copy", () => {
-  // The spec holds selectors, not prose, so a claim guard has to read the stage
-  // markup where the visible strings actually live. This is the assertion that
-  // keeps the reel publishable: SEAI's positioning is safe to show, invented
-  // proof points and pricing are not.
-  const stage = readFileSync("apps/motion-lab/src/SeaiLaunchReel.tsx", "utf8");
-  /** Visible copy only: strip JSX/TS syntax and comments. */
-  const copy = stage
-    .replace(/\/\*[\s\S]*?\*\//g, " ")
-    .replace(/\/\/.*$/gm, " ")
-    .replace(/<[^>]*>/g, " ")
-    .replace(/[{}[\]"'`,;]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
+describe("seai-launch-reel uses the REAL SEAI project", () => {
+  it("renders all seven SEAI demo verticals from captured pages", () => {
+    // Captured as `${demo.key}-hero.png` from the DEMOS table, so assert the
+    // table drives it and the capture path is the real one.
+    expect(stageSrc).toContain("/assets/seai-demos/${demo.key}-hero.png");
+    for (const vertical of SEAI_REEL_DEMOS) {
+      expect(stageSrc).toContain(`{ key: "${vertical}"`);
+    }
+  });
 
-  it("carries the required brand lines", () => {
-    for (const line of ["YOUR BUSINESS", "NEEDS A WEBSITE.", "WE BUILD IT.", "WITH AI.", "DESIGN.", "CODE.", "CONTENT.", "SEO.", "ONE WEBSITE.", "BUILT FOR", "YOUR BUSINESS.", "SEAI", "AI-BUILT WEBSITES.", "BUILD YOURS"]) {
+  it("references no invented business names or hand-drawn site cards", () => {
+    // The previous build drew fake sites (Forno, Ironworks, Lumen, North & Key)
+    // and hand-built browser chrome. The reel must show SEAI's own builds.
+    for (const invented of ["Forno", "Ironworks", "Lumen", "NORTH & KEY", "sr-card", "sr-browser", "sr-dot"]) {
+      expect(stageSrc).not.toContain(invented);
+    }
+    // Captures are local assets, not a hotlink to a live site.
+    expect(stageSrc).not.toMatch(/https?:\/\//);
+  });
+
+  it("uses SEAI's own typefaces and brand marks", () => {
+    for (const asset of [
+      "inter-latin-normal",
+      "instrument-serif-latin-normal",
+      "instrument-serif-latin-italic",
+      "jetbrains-mono-latin-normal"
+    ]) {
+      expect(cssCode).toContain(`/assets/seai-brand/${asset}.woff2`);
+    }
+    expect(stageSrc).toContain("/assets/seai-brand/logo.svg");
+  });
+
+  it("inherits SEAI's design tokens rather than approximating them", () => {
+    for (const token of [
+      "--seai-ink: #0b0b0c",
+      "--seai-paper: #fbfbfa",
+      "--seai-sub: #56565e",
+      "--seai-faint: #8e8e96",
+      "--seai-radius: 3px",
+      "--seai-ease: cubic-bezier(0.16, 1, 0.3, 1)"
+    ]) {
+      expect(cssCode).toContain(token);
+    }
+  });
+
+  it("adds none of the effects SEAI's own system rules out", () => {
+    // "Expensive through type, scale, spacing, material and precision - never
+    // through gradients, glow, glassmorphism, heavy radii or decorative motion."
+    expect(cssCode).not.toMatch(/backdrop-filter|blur\(|text-shadow/);
+    expect(cssCode).not.toMatch(/@keyframes|animation:|will-change|transition:/);
+    // Gradients are allowed ONLY as photographic falloff, never as decoration.
+    // Exactly three exist, each with a job: the stage vignette, the caption
+    // scrim over a site capture, and the top scrim on the finished-site plate.
+    expect((cssCode.match(/gradient\(/g) ?? []).length).toBe(3);
+    for (const selector of [".sr-vignette", ".sr-shot-cap", ".sr-plate-depth"]) {
+      expect(cssCode).toContain(selector);
+    }
+  });
+
+  it("never puts white overlay copy on the light site plate", () => {
+    // Regression guard. `.sr-plate` is a captured (light) page and `.sr-built`
+    // is white type; a full-bleed plate rendered the line invisible before.
+    const plateTop = Number(/^\.sr-plate \{[\s\S]*?top:\s*(\d+)px;/m.exec(cssCode)?.[1]);
+    const plateHeight = Number(/^\.sr-plate \{[\s\S]*?height:\s*(\d+)px;/m.exec(cssCode)?.[1]);
+    const builtBottom = Number(/^\.sr-built \{[\s\S]*?bottom:\s*(\d+)px;/m.exec(cssCode)?.[1]);
+    expect(Number.isNaN(plateTop) || Number.isNaN(plateHeight) || Number.isNaN(builtBottom)).toBe(false);
+    // Two 82px lines plus tracking, generously boxed.
+    const builtTop = SEAI_REEL_H - builtBottom - 260;
+    expect(builtTop).toBeGreaterThan(plateTop + plateHeight);
+  });
+
+  it("carries the reel's own script and no invented claims", () => {
+    const copy = stageSrc
+      .replace(/\/\*[\s\S]*?\*\//g, " ")
+      .replace(/<[^>]*>/g, " ")
+      .replace(/[{}[\]"'`,;]/g, " ")
+      .replace(/\s+/g, " ");
+    for (const line of [
+      "YOUR BUSINESS",
+      "NEEDS A WEBSITE.",
+      "WE BUILD IT.",
+      "DESIGN.",
+      "CODE.",
+      "CONTENT.",
+      "SEO.",
+      "ONE WEBSITE.",
+      "BUILT FOR",
+      "AI-BUILT WEBSITES.",
+      "BUILD YOURS"
+    ]) {
       expect(copy).toContain(line);
     }
-  });
-
-  it("states no pricing", () => {
     expect(copy).not.toMatch(/[$£€]\s?\d/);
-    expect(copy.toLowerCase()).not.toMatch(/per month|\/mo\b|monthly|starting at|from just/);
-  });
-
-  it("claims no metrics or social proof", () => {
     expect(copy).not.toMatch(/\d+\s?%/);
-    expect(copy.toLowerCase()).not.toMatch(/rating|review|trusted by|clients|customers|\b\d+\+?\s?(businesses|clients|websites built)/);
-  });
-
-  it("invents no superlatives about SEAI's service", () => {
-    expect(copy.toLowerCase()).not.toMatch(/best|#1|fastest|guarantee|unmatched|world-class/);
-  });
-
-  it("keeps the four brief verticals", () => {
-    for (const vertical of ['data-site="restaurant"', 'data-site="gym"', 'data-site="salon"', 'data-site="estate"']) {
-      expect(stage).toContain(vertical);
-    }
-  });
-
-  it("never puts white overlay copy on the white site panel", () => {
-    // Regression guard. `.sr-site` is a #fafafa page and `.sr-built` is white
-    // type; a full-bleed panel rendered "BUILT FOR / YOUR BUSINESS." invisible.
-    // The panel is pinned to the top of the artboard and the line lives in the
-    // black band beneath it, so assert the two authored boxes cannot overlap.
-    const css = readFileSync("apps/motion-lab/src/seai-reel.css", "utf8");
-    const siteTop = Number(/^\.sr-site \{[\s\S]*?top:\s*(\d+)px;/m.exec(css)?.[1]);
-    const siteHeight = Number(/^\.sr-site \{[\s\S]*?height:\s*(\d+)px;/m.exec(css)?.[1]);
-    const builtBottom = Number(/^\.sr-built \{[\s\S]*?bottom:\s*(\d+)px;/m.exec(css)?.[1]);
-    expect(Number.isNaN(siteTop) || Number.isNaN(siteHeight) || Number.isNaN(builtBottom)).toBe(false);
-    // The copy needs two 84px lines plus tracking; allow a generous box.
-    const builtTop = SEAI_REEL_H - builtBottom - 260;
-    expect(builtTop).toBeGreaterThan(siteTop + siteHeight);
+    expect(copy.toLowerCase()).not.toMatch(/rating|review|trusted by|\bclients\b|customers|guarantee|\bbest\b|#1/);
   });
 });

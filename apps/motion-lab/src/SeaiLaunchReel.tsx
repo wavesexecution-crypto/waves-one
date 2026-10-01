@@ -1,20 +1,24 @@
 /**
- * SEAI launch reel — the stage. 1080×1920 (9:16) artboard for Instagram / Reels /
- * TikTok, six labelled scenes, 15 seconds.
+ * SEAI launch reel — the stage. 1080×1920 (9:16), five labelled scenes, 15s.
  *
- * Pure presentation, same rule as the brand film: no CSS animation, no keyframes,
- * nothing here that moves on its own. Every visible change is a GSAP op in
- * `seai-launch-reel.ts` targeting a plain selector in this markup.
+ * Pure presentation: no CSS animation, no keyframes. Every visible change is a
+ * GSAP op in `seai-launch-reel.ts` targeting a selector in this markup.
  *
- * Copy provenance — nothing in this file is invented product marketing:
- *   - the hook, claim, four-pillar and lockup lines come from the reel brief
- *   - "AI-BUILT WEBSITES." and "BUILD YOURS →" match SEAI's own positioning
- *     (site title: "SEAI - AI-built websites for real businesses"; primary CTA:
- *     "Build my website →")
- *   - the four website cards are demonstration builds for fictional sample
- *     businesses. They are the deliverables being shown, not claims about SEAI:
- *     no testimonials, client counts, ratings, or performance figures appear
- *     anywhere in the reel.
+ * VISUAL SOURCE OF TRUTH — the real SEAI project, not a reconstruction:
+ *   - `apps/motion-lab/public/assets/seai-demos/*.png` are screenshots of the
+ *     actual `D:\seai.public\dist/examples/<vertical>.html` pages, captured in
+ *     Chromium at this exact artboard size by
+ *     `scripts/capture-seai-demos.mjs`. Seven verticals, hero + detail each.
+ *   - Typography is SEAI's own three families, self-hosted from the project:
+ *     Inter (display/body), Instrument Serif (editorial italic), JetBrains Mono
+ *     (eyebrows, labels, stats).
+ *   - Type scale, tracking, colour roles and the single easing curve follow
+ *     `public/demo.css` in the SEAI project.
+ *
+ * Copy provenance: the reel's own script, plus SEAI's real positioning
+ * ("AI-built websites for real businesses"). No invented metrics, no pricing,
+ * no testimonials — the demo cards are SEAI's own example builds, shown as the
+ * work, not as claims about the service.
  */
 
 import Artboard from "./Artboard";
@@ -23,32 +27,19 @@ import "./seai-reel.css";
 export const SEAI_REEL_W = 1080;
 export const SEAI_REEL_H = 1920;
 
-/** Bump whenever this markup changes shape; the Lab reloads once when the
- *  published spec and the loaded bundle disagree. */
-export const SEAI_REEL_STAGE_VERSION = 1;
+/** Bump when the markup below changes shape; the Lab reloads a stale bundle. */
+export const SEAI_REEL_STAGE_VERSION = 2;
 
-/** Browser chrome + nav + content blocks that make each card read as a real
- *  built website rather than a coloured rectangle. */
-function SiteChrome({ name, kind }: { name: string; kind: string }) {
-  return (
-    <>
-      <div className="sr-browser" aria-hidden="true">
-        <span className="sr-dot" />
-        <span className="sr-dot" />
-        <span className="sr-dot" />
-        <span className="sr-url">{name.toLowerCase().replace(/[^a-z]/g, "")}.com</span>
-      </div>
-      <div className="sr-site-nav">
-        <span className="sr-site-brand">{name}</span>
-        <span className="sr-site-links">
-          <i />
-          <i />
-          <i />
-        </span>
-      </div>
-    </>
-  );
-}
+/** The seven verticals SEAI actually ships, in the order the reel runs them. */
+const DEMOS = [
+  { key: "restaurant", label: "RESTAURANT" },
+  { key: "gym", label: "GYM" },
+  { key: "salon", label: "SALON" },
+  { key: "clinic", label: "CLINIC" },
+  { key: "real-estate", label: "REAL ESTATE" },
+  { key: "cafe", label: "CAFE" },
+  { key: "business", label: "BUSINESS" }
+] as const;
 
 export default function SeaiLaunchReel() {
   return (
@@ -62,137 +53,79 @@ export default function SeaiLaunchReel() {
     >
       <div className="sr-vignette" aria-hidden="true" />
 
-      {/* Persistent chrome: a hairline top/bottom frame and a live progress rail. */}
-      <span className="sr-edge sr-edge-top" aria-hidden="true" />
-      <span className="sr-edge sr-edge-bottom" aria-hidden="true" />
+      {/* Persistent chrome, in SEAI's own vocabulary: a hairline rule, a mono
+          progress rail, and the wordmark's baseline tick. */}
+      <span className="sr-hair sr-hair-top" aria-hidden="true" />
       <span className="sr-progress" aria-hidden="true" />
-      <span className="sr-serial" aria-hidden="true">SEAI / BUILD</span>
+      <span className="sr-corner" aria-hidden="true" />
 
-      {/* 01 — HOOK */}
-      <section className="sr-scene sr-s1">
-        <span className="sr-kicker">SEAI</span>
-        <h2 className="sr-headline">
-          <span className="sr-line" data-split="sr-hook-a">YOUR BUSINESS</span>
-          <span className="sr-line sr-line-2" data-split="sr-hook-b">NEEDS A WEBSITE.</span>
-        </h2>
-        <span className="sr-underline" aria-hidden="true" />
+      {/* 01 intro -------------------------------------------------------- */}
+      <section className="sr-scene sr-s-intro">
+        <img className="sr-logo" src="/assets/seai-brand/logo.svg" alt="SEAI" data-split="sr-logo" />
+        <h1 className="sr-statement">
+          <span className="sr-statement-line" data-split="sr-statement-a">YOUR BUSINESS</span>
+          <span className="sr-statement-line sr-statement-sub" data-split="sr-statement-b">NEEDS A WEBSITE.</span>
+        </h1>
+        <span className="sr-rule" aria-hidden="true" />
+        <span className="sr-eyebrow sr-eyebrow-center">AI-BUILT WEBSITES</span>
       </section>
 
-      {/* 02 — CLAIM */}
-      <section className="sr-scene sr-s2">
+      {/* 02 ai-build ------------------------------------------------------ */}
+      <section className="sr-scene sr-s-ai">
         <h2 className="sr-claim">
-          <span className="sr-line" data-split="sr-claim-a">WE BUILD IT.</span>
-          <span className="sr-line sr-claim-2" data-split="sr-claim-b">WITH AI.</span>
+          <span className="sr-claim-line" data-split="sr-claim-a">WE BUILD IT.</span>
+          <span className="sr-claim-line sr-claim-2" data-split="sr-claim-b">WITH <em>AI</em>.</span>
         </h2>
-        <span className="sr-underline sr-underline-wide" aria-hidden="true" />
+        <span className="sr-rule sr-rule-wide" aria-hidden="true" />
       </section>
 
-      {/* 03 — WORK: four built sites on a masked, continuously moving rail */}
-      <section className="sr-scene sr-s3">
-        <span className="sr-scene-tag">BUILT SITES</span>
+      {/* 03 showcase — the real SEAI demo sites --------------------------- */}
+      <section className="sr-scene sr-s-showcase">
+        <span className="sr-eyebrow sr-scene-tag">REAL SITES · BUILT BY SEAI</span>
         <div className="sr-rail">
-          <article className="sr-card" data-site="restaurant">
-            <SiteChrome name="Forno" kind="restaurant" />
-            <div className="sr-card-hero">
-              <span className="sr-card-eyebrow">EST. 1994</span>
-              <h3 className="sr-card-title">WOOD FIRE<br />KITCHEN</h3>
-              <span className="sr-card-cta">BOOK A TABLE</span>
-            </div>
-            <div className="sr-card-row">
-              <span className="sr-tile" />
-              <span className="sr-tile" />
-              <span className="sr-tile" />
-            </div>
-          </article>
-
-          <article className="sr-card" data-site="gym">
-            <SiteChrome name="Ironworks" kind="gym" />
-            <div className="sr-card-hero">
-              <span className="sr-card-eyebrow">STRENGTH / CONDITIONING</span>
-              <h3 className="sr-card-title">IRON<br />WORKS</h3>
-              <span className="sr-card-cta">FREE FIRST SESSION</span>
-            </div>
-            <div className="sr-card-metrics">
-              <span><b>06</b>DAYS</span>
-              <span><b>05</b>AM OPEN</span>
-            </div>
-          </article>
-
-          <article className="sr-card" data-site="salon">
-            <SiteChrome name="Lumen" kind="salon" />
-            <div className="sr-card-hero">
-              <span className="sr-card-eyebrow">HAIR / SKIN / NAILS</span>
-              <h3 className="sr-card-title">LUMEN<br />SALON</h3>
-              <span className="sr-card-cta">APPOINTMENTS</span>
-            </div>
-            <div className="sr-card-row">
-              <span className="sr-tile sr-tile-tall" />
-              <span className="sr-tile" />
-            </div>
-          </article>
-
-          <article className="sr-card" data-site="estate">
-            <SiteChrome name="North &amp; Key" kind="estate" />
-            <div className="sr-card-hero">
-              <span className="sr-card-eyebrow">SALES / LETTINGS</span>
-              <h3 className="sr-card-title">NORTH<br />&amp; KEY</h3>
-              <span className="sr-card-cta">VIEW LISTINGS</span>
-            </div>
-            <div className="sr-card-list">
-              <span className="sr-listing"><i /><b>3 BED</b><em>SEMI — LET</em></span>
-              <span className="sr-listing"><i /><b>2 BED</b><em>FLAT — SALE</em></span>
-            </div>
-          </article>
+          {DEMOS.map((demo) => (
+            <figure className="sr-shot" key={demo.key} data-demo={demo.key}>
+              <img
+                className="sr-shot-img"
+                src={`/assets/seai-demos/${demo.key}-hero.png`}
+                alt={`SEAI ${demo.label.toLowerCase()} website`}
+                decoding="async"
+              />
+              <figcaption className="sr-shot-cap">
+                <span className="sr-shot-label">{demo.label}</span>
+                <span className="sr-shot-dot" aria-hidden="true" />
+              </figcaption>
+            </figure>
+          ))}
         </div>
       </section>
 
-      {/* 04 — SYSTEM: four pillars, then collapse into one */}
-      <section className="sr-scene sr-s4">
+      {/* 04 capabilities -------------------------------------------------- */}
+      <section className="sr-scene sr-s-caps">
         <div className="sr-pillars">
-          <span className="sr-pillar" data-split="sr-p1">DESIGN.</span>
-          <span className="sr-pillar" data-split="sr-p2">CODE.</span>
-          <span className="sr-pillar" data-split="sr-p3">CONTENT.</span>
-          <span className="sr-pillar" data-split="sr-p4">SEO.</span>
+          <span className="sr-pillar" data-split="sr-cap-design">DESIGN.</span>
+          <span className="sr-pillar" data-split="sr-cap-code">CODE.</span>
+          <span className="sr-pillar" data-split="sr-cap-content">CONTENT.</span>
+          <span className="sr-pillar" data-split="sr-cap-seo">SEO.</span>
         </div>
         <h2 className="sr-one" data-split="sr-one">ONE WEBSITE.</h2>
       </section>
 
-      {/* 05 — RESULT: one finished site taking the whole screen */}
-      <section className="sr-scene sr-s5">
-        <div className="sr-site">
-          <div className="sr-browser" aria-hidden="true">
-            <span className="sr-dot" />
-            <span className="sr-dot" />
-            <span className="sr-dot" />
-            <span className="sr-url">forno.com</span>
-          </div>
-          <div className="sr-site-nav">
-            <span className="sr-site-brand">Forno</span>
-            <span className="sr-site-links"><i /><i /><i /></span>
-          </div>
-          <div className="sr-site-hero">
-            <span className="sr-card-eyebrow" data-depth="1">EST. 1994</span>
-            <h3 className="sr-site-title" data-depth="2">WOOD FIRE<br />KITCHEN</h3>
-            <span className="sr-site-cta" data-depth="3">BOOK A TABLE</span>
-          </div>
-          <div className="sr-site-strip" data-depth="4">
-            <span className="sr-tile" />
-            <span className="sr-tile" />
-            <span className="sr-tile" />
-          </div>
+      {/* 05 final — a real finished site, then the lockup ----------------- */}
+      <section className="sr-scene sr-s-final">
+        <div className="sr-plate">
+          <img className="sr-plate-img" src="/assets/seai-demos/cafe-hero.png" alt="SEAI cafe website" decoding="async" />
+          <div className="sr-plate-depth" aria-hidden="true" />
         </div>
         <h2 className="sr-built">
-          <span className="sr-line" data-split="sr-built-a">BUILT FOR</span>
-          <span className="sr-line sr-built-2" data-split="sr-built-b">YOUR BUSINESS.</span>
+          <span className="sr-built-line" data-split="sr-built-a">BUILT FOR</span>
+          <span className="sr-built-line sr-built-2" data-split="sr-built-b">YOUR BUSINESS.</span>
         </h2>
-      </section>
 
-      {/* 06 — LOCKUP */}
-      <section className="sr-scene sr-s6">
         <div className="sr-lockup">
-          <h2 className="sr-logo" data-split="sr-logo">SEAI</h2>
-          <p className="sr-tagline" data-split="sr-tag">AI-BUILT WEBSITES.</p>
-          <span className="sr-cta" data-split="sr-cta">
+          <img className="sr-lockup-logo" src="/assets/seai-brand/logo.svg" alt="SEAI" data-split="sr-lock-logo" />
+          <p className="sr-lockup-tag" data-split="sr-lock-tag">AI-BUILT WEBSITES.</p>
+          <span className="sr-cta" data-split="sr-lock-cta">
             <span className="sr-cta-text">BUILD YOURS</span>
             <span className="sr-cta-arrow">→</span>
           </span>
