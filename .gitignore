@@ -31,6 +31,8 @@ apps/motion-lab/public/exports/*
 !apps/motion-lab/public/exports/waves-brand-film-19s.json
 !apps/motion-lab/public/exports/seai-launch-reel.mp4
 !apps/motion-lab/public/exports/seai-launch-reel.json
+!apps/motion-lab/public/exports/motion-lab-demo.mp4
+!apps/motion-lab/public/exports/motion-lab-demo.json
 apps/motion-lab/dist/
 .vercel
 .env*

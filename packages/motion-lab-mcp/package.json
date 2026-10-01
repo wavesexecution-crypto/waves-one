@@ -23,7 +23,8 @@
     "build": "tsup",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "lint": "tsc --noEmit -p tsconfig.json",
-    "seai-reel:publish": "node dist/seai-reel-publish.mjs", "test": "node test/flow.mjs && node test/backend.mjs && node test/golden.mjs && node test/ai-motion.mjs && node test/gsap-motion.mjs"
+    "seai-reel:publish": "node dist/seai-reel-publish.mjs",
+    "motion-lab-demo:publish": "node dist/motion-lab-demo-publish.mjs", "test": "node test/flow.mjs && node test/backend.mjs && node test/golden.mjs && node test/ai-motion.mjs && node test/gsap-motion.mjs"
   },
   "dependencies": {
     "@waves/motion": "workspace:*"

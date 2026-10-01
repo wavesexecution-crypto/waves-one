@@ -38,8 +38,9 @@ const scene = argValue("--scene", "waves-brand-film-19s");
  *  (GsapSceneSpec deliberately carries no width/height), so the exporter keeps
  *  the same table the artboard components use. */
 const SCENES = {
-  "waves-brand-film-19s": { width: 1920, height: 1080, fps: 25, artboard: ".bf-artboard" },
-  "seai-launch-reel": { width: 1080, height: 1920, fps: 30, artboard: ".sr-artboard" }
+"waves-brand-film-19s": { width: 1920, height: 1080, fps: 25, artboard: ".bf-artboard" },
+"seai-launch-reel": { width: 1080, height: 1920, fps: 30, artboard: ".sr-artboard" },
+"motion-lab-demo": { width: 1080, height: 1920, fps: 60, artboard: ".mld-artboard" }
 };
 
 const TAIL_SEC = 2.0;
@@ -165,7 +166,7 @@ async function main() {
     copyFileSync(src, webmPath);
 const mp4Name = `${scene}.mp4`;
     const mp4Path = path.join(outDir, mp4Name);
-    const trimSec = durationMs / 1000 + 1 / 30; // 15.033... to include the 450th frame at 30fps
+    const trimSec = durationMs / 1000 + 1 / outputFps; // one extra frame so the final frame is fully captured
     execFileSync(
       "ffmpeg",
       [
@@ -173,7 +174,7 @@ const mp4Name = `${scene}.mp4`;
         "-ss", leadSec.toFixed(2),
         "-i", webmPath,
         "-t", trimSec.toFixed(3),
-        "-vf", `fps=60,scale=${WIDTH}:${HEIGHT}:flags=lanczos`,
+        "-vf", `fps=${outputFps},scale=${WIDTH}:${HEIGHT}:flags=lanczos`,
         "-c:v", "libx264",
         "-pix_fmt", "yuv420p",
         "-crf", "15",

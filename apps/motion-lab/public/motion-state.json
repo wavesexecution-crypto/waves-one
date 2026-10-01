@@ -1,9 +1,9 @@
 {
   "revision": 8,
-  "updatedAt": "2026-09-30T18:43:07.016Z",
+  "updatedAt": "2026-10-01T08:09:22.852Z",
   "ops": [
     {
-      "id": "scene-plan-muogdth3-14",
+      "id": "scene-plan-mup96oib-14",
       "kind": "scene",
       "scene": {
         "elements": [
@@ -47,7 +47,7 @@
       }
     },
     {
-      "id": "op-plan-muogdth2-8",
+      "id": "op-plan-mup96oia-8",
       "kind": "animate",
       "target": "#lab-scene-pl-crm-1",
       "properties": {
@@ -77,7 +77,7 @@
       }
     },
     {
-      "id": "cascade-plan-muogdth2-9",
+      "id": "cascade-plan-mup96oib-9",
       "kind": "animate",
       "target": "#lab-scene-pl-crm-1 .lab-reveal",
       "properties": {
@@ -99,7 +99,7 @@
       }
     },
     {
-      "id": "op-plan-muogdth3-10",
+      "id": "op-plan-mup96oib-10",
       "kind": "animate",
       "target": "#lab-scene-pl-notebook-2",
       "properties": {
@@ -117,7 +117,7 @@
       }
     },
     {
-      "id": "cascade-plan-muogdth3-11",
+      "id": "cascade-plan-mup96oib-11",
       "kind": "animate",
       "target": "#lab-scene-pl-notebook-2 .lab-reveal",
       "properties": {
@@ -135,7 +135,7 @@
       }
     },
     {
-      "id": "op-plan-muogdth3-12",
+      "id": "op-plan-mup96oib-12",
       "kind": "animate",
       "target": "#lab-scene-pl-workflow-3",
       "properties": {
@@ -165,7 +165,7 @@
       }
     },
     {
-      "id": "cascade-plan-muogdth3-13",
+      "id": "cascade-plan-mup96oib-13",
       "kind": "animate",
       "target": "#lab-scene-pl-workflow-3 .lab-reveal",
       "properties": {

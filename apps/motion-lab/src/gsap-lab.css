@@ -166,6 +166,13 @@ body {
   padding: 24px;
 }
 
+/* 9:16 Motion Lab Demo stage — same vertical constraints as the reel. */
+.gsap-stage-motionlab {
+  min-height: min(88vh, 980px);
+  background: #0a0a0b;
+  padding: 24px;
+}
+
 /* Scene layers are always mounted so a spec can never outrun the bundle that
    hosts its targets; only the active layer is shown. */
 .gsap-layer {

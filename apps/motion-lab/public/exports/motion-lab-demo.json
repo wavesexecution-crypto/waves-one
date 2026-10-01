@@ -1,0 +1,14 @@
+{
+  "ok": true,
+  "scene": "motion-lab-demo",
+  "file": "/exports/motion-lab-demo.mp4",
+  "filename": "motion-lab-demo.mp4",
+  "width": 1080,
+  "height": 1920,
+  "fps": 60,
+  "codec": "h264",
+  "container": "mp4",
+  "durationMs": 12000,
+  "size": 1903485,
+  "renderedAt": "2026-10-01T08:12:19.429Z"
+}

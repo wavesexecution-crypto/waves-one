@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { GsapEngine, type GsapPlayback, type GsapPlaybackState, type GsapSceneSpec } from "@waves/motion";
 import WavesBrandFilm, { BRAND_FILM_STAGE_VERSION } from "./WavesBrandFilm";
 import SeaiLaunchReel, { SEAI_REEL_STAGE_VERSION } from "./SeaiLaunchReel";
+import MotionLabDemoReel, { MOTION_LAB_DEMO_STAGE_VERSION } from "./MotionLabDemoReel";
 import "./gsap-lab.css";
 
 interface GsapLiveState {
@@ -27,6 +28,7 @@ interface FilmVideo {
 const POLL_MS = 1000;
 const BRAND_FILM = "waves-brand-film-19s";
 const SEAI_REEL = "seai-launch-reel";
+const MOTION_LAB_DEMO = "motion-lab-demo";
 const RELOAD_GUARD = "waves-gsap-stage-reload";
 
 /** Scene markup is always mounted; only its visibility is switched. A spec can
@@ -34,7 +36,8 @@ const RELOAD_GUARD = "waves-gsap-stage-reload";
 const SCENE_LAYERS = [
   { name: "obsidian-hero", label: "OBSIDIAN HERO", stageVersion: undefined },
   { name: BRAND_FILM, label: "WAVES BRAND FILM", stageVersion: BRAND_FILM_STAGE_VERSION },
-  { name: SEAI_REEL, label: "SEAI LAUNCH REEL", stageVersion: SEAI_REEL_STAGE_VERSION }
+  { name: SEAI_REEL, label: "SEAI LAUNCH REEL", stageVersion: SEAI_REEL_STAGE_VERSION },
+  { name: MOTION_LAB_DEMO, label: "MOTION LAB DEMO", stageVersion: MOTION_LAB_DEMO_STAGE_VERSION }
 ] as const;
 
 /**
@@ -361,7 +364,7 @@ const unsubscribeRef = useRef<(() => void) | null>(null);
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           format: "mp4",
-          orientation: activeName === SEAI_REEL ? "vertical" : "landscape"
+          orientation: activeName === SEAI_REEL || activeName === MOTION_LAB_DEMO ? "vertical" : "landscape"
         })
       });
       const body = (await response.json()) as { ok?: boolean; file?: string; error?: string };
@@ -384,6 +387,7 @@ const unsubscribeRef = useRef<(() => void) | null>(null);
   const activeName = live?.spec.name ?? null;
   const isBrandFilm = activeName === BRAND_FILM;
   const isSeaiReel = activeName === SEAI_REEL;
+  const isMotionLabDemo = activeName === MOTION_LAB_DEMO;
   const knownScene = SCENE_LAYERS.some((layer) => layer.name === activeName);
   /** No loaded playback means no transport. These buttons used to stay enabled
    *  and no-op, which is exactly how a frozen first frame reads as a bug. */
@@ -425,11 +429,11 @@ const unsubscribeRef = useRef<(() => void) | null>(null);
 
       {/* Every scene layer stays mounted; only the active one is visible. */}
       <div
-        className={`gsap-stage${isBrandFilm ? " gsap-stage-film" : ""}${isSeaiReel ? " gsap-stage-reel" : ""}`}
+        className={`gsap-stage${isBrandFilm ? " gsap-stage-film" : ""}${isSeaiReel ? " gsap-stage-reel" : ""}${isMotionLabDemo ? " gsap-stage-motionlab" : ""}`}
         ref={stageRef}
         aria-label="GSAP stage"
       >
-        <div className="gsap-layer" data-scene="obsidian-hero" data-active={!isBrandFilm && !isSeaiReel}>
+        <div className="gsap-layer" data-scene="obsidian-hero" data-active={!isBrandFilm && !isSeaiReel && !isMotionLabDemo}>
           <div className="ob-bg" aria-hidden="true" />
           <div className="ob-frame">
             <div className="ob-eyebrow">WAVES — MOTION LAB</div>
@@ -452,6 +456,9 @@ const unsubscribeRef = useRef<(() => void) | null>(null);
         </div>
         <div className="gsap-layer" data-scene={SEAI_REEL} data-active={isSeaiReel}>
           <SeaiLaunchReel />
+        </div>
+        <div className="gsap-layer" data-scene={MOTION_LAB_DEMO} data-active={isMotionLabDemo}>
+          <MotionLabDemoReel />
         </div>
       </div>
 
